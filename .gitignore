@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+# 本地开发覆盖（见 .env.example）
+.env.local
+.env.*.local
+
+# 日志
+*.log
+pnpm-debug.log*
+
+# 系统与编辑器
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
