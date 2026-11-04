@@ -86,6 +86,7 @@ a {
 }
 
 button,
+input,
 select,
 textarea {
   font: inherit;
@@ -134,6 +135,7 @@ p {
 
 .btn:focus-visible,
 .segmented button:focus-visible,
+input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
@@ -176,7 +178,9 @@ a:focus-visible {
   color: var(--on-primary);
 }
 
-select {
+select,
+input:not([type="checkbox"]) {
+  min-width: 0;
   height: 32px;
   padding: 0 8px;
   border: 1px solid var(--field-border);
@@ -213,6 +217,16 @@ select {
 .status-resolved {
   background: var(--resolved-bg);
   color: var(--resolved);
+}
+
+.status-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.status-neutral {
+  background: var(--line);
+  color: var(--muted);
 }
 
 .error-banner {

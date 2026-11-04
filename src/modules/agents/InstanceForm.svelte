@@ -1,0 +1,313 @@
+<script lang="ts">
+  /**
+   * 新建或修改实例。
+   *
+   * 新建：选机器、流程、仓库与开发分支、调度；新实例一律是演练模式，看过结果再改成推送。
+   * 修改：只把改动过的字段发给 Mac。「允许推到会触发部署的分支」只能在 Mac 上改，这里不提供。
+   */
+  import { untrack } from 'svelte';
+
+  import {
+    BROWSER_TIMEZONE,
+    ROLES,
+    type IInstance,
+    type IMachine,
+    type Role,
+    type Schedule,
+    type UpdateInstancePayload,
+  } from './api';
+  import { commandState, performCommand } from './command.svelte';
+
+  let {
+    instance,
+    machines,
+    onClose,
+    onSaved,
+  }: {
+    /** 要修改的实例；null 表示新建 */
+    instance: IInstance | null;
+    machines: IMachine[];
+    onClose: () => void;
+    onSaved: () => void;
+  } = $props();
+
+  // 表单只在打开时取一次初始值，之后总览刷新不会冲掉正在编辑的内容
+  const initial = untrack(() => instance);
+  const initialMachines = untrack(() => machines);
+  const initialSchedule: Schedule = initial?.schedule ?? { kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai' };
+
+  let machineId = $state(
+    initial?.machineId ?? initialMachines.find((item) => item.isOnline)?.id ?? initialMachines[0]?.id ?? '',
+  );
+  const machine = $derived(machines.find((item) => item.id === machineId) ?? null);
+  let flowType = $state(initial?.flowType ?? initialMachines[0]?.flows[0]?.type ?? 'review');
+  let repo = $state('YadOwO/');
+  let branch = $state(initial?.branch ?? 'dev');
+  let scheduleKind = $state<Schedule['kind']>(initialSchedule.kind);
+  let time = $state(initialSchedule.kind === 'daily' ? initialSchedule.time : '18:00');
+  let timezone = $state(initialSchedule.kind === 'interval' ? 'Asia/Shanghai' : initialSchedule.timezone);
+  let minutes = $state(initialSchedule.kind === 'interval' ? initialSchedule.minutes : 60);
+  let expression = $state(initialSchedule.kind === 'cron' ? initialSchedule.expression : '0 18 * * *');
+  let isDryRun = $state(initial?.isDryRun ?? true);
+  let maxRounds = $state(initial?.maxRounds ?? 2);
+  /** 各角色单独指定的模型；空字符串表示跟随全局 */
+  let models = $state<Record<Role, string>>({
+    reviewer: initial?.models.reviewer ?? '',
+    lead: initial?.models.lead ?? '',
+    fixer: initial?.models.fixer ?? '',
+  });
+  let errorText = $state<string | null>(null);
+
+  /** 时区选项：北京时间、本机时区，以及实例当前用的时区 */
+  const timezones = $derived(
+    [...new Set(['Asia/Shanghai', BROWSER_TIMEZONE, timezone])].map((value) => ({
+      value,
+      label: value === 'Asia/Shanghai' ? '北京时间' : value === BROWSER_TIMEZONE ? `本机时区（${value}）` : value,
+    })),
+  );
+
+  /** 按表单内容组装调度 */
+  function buildSchedule(): Schedule {
+    if (scheduleKind === 'daily') {
+      return { kind: 'daily', time, timezone };
+    }
+    if (scheduleKind === 'interval') {
+      return { kind: 'interval', minutes };
+    }
+    return { kind: 'cron', expression: expression.trim(), timezone };
+  }
+
+  /** 只收集改动过的字段；用户取消切换到推送时返回 null */
+  function buildPatch(current: IInstance, schedule: Schedule): UpdateInstancePayload | null {
+    const patch: UpdateInstancePayload = { id: current.id };
+    if (branch.trim() !== current.branch) {
+      patch.branch = branch.trim();
+    }
+    if (JSON.stringify(schedule) !== JSON.stringify(current.schedule)) {
+      patch.schedule = schedule;
+    }
+    if (isDryRun !== current.isDryRun) {
+      if (!isDryRun && !confirm(`改成推送后，复审通过的修复会直接推到 ${branch.trim()}。确定吗？`)) {
+        return null;
+      }
+      patch.isDryRun = isDryRun;
+    }
+    if (maxRounds !== current.maxRounds) {
+      patch.maxRounds = maxRounds;
+    }
+    const modelPatch: Partial<Record<Role, string | null>> = {};
+    for (const { role } of ROLES) {
+      const next = models[role] === '' ? null : models[role];
+      if (next !== (current.models[role] ?? null)) {
+        modelPatch[role] = next;
+      }
+    }
+    if (Object.keys(modelPatch).length > 0) {
+      patch.models = modelPatch;
+    }
+    return patch;
+  }
+
+  /** 提交：发指令给 Mac，成功后关闭表单 */
+  async function submit(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    errorText = null;
+    const schedule = buildSchedule();
+    if (schedule.kind === 'interval' && (!Number.isInteger(schedule.minutes) || schedule.minutes < 5)) {
+      errorText = '间隔至少 5 分钟';
+      return;
+    }
+    if (branch.trim() === '') {
+      errorText = '请填写开发分支';
+      return;
+    }
+
+    let isOk: boolean;
+    if (initial === null) {
+      const name = repo.trim();
+      if (!/^[\w.-]+\/[\w.-]+$/.test(name)) {
+        errorText = '仓库格式应为 owner/name，例如 YadOwO/yado_ai';
+        return;
+      }
+      isOk = await performCommand(
+        machineId,
+        { type: 'instance.create', payload: { flowType, repo: name, branch: branch.trim(), schedule } },
+        `新建 ${name}`,
+      );
+    } else {
+      const patch = buildPatch(initial, schedule);
+      if (patch === null) {
+        return;
+      }
+      if (Object.keys(patch).length === 1) {
+        onClose();
+        return;
+      }
+      isOk = await performCommand(initial.machineId, { type: 'instance.update', payload: patch }, `修改 ${initial.repo}`);
+    }
+    if (isOk) {
+      onSaved();
+    }
+  }
+</script>
+
+<form class="form" onsubmit={submit}>
+  {#if initial === null}
+    {#if machines.length > 1}
+      <label class="field">
+        <span>机器</span>
+        <select bind:value={machineId}>
+          {#each machines as option (option.id)}
+            <option value={option.id}>{option.id}{option.isOnline ? '' : '（离线）'}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+    <label class="field">
+      <span>流程</span>
+      <select bind:value={flowType}>
+        {#each machine?.flows ?? [] as flow (flow.type)}
+          <option value={flow.type}>{flow.title}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="field">
+      <span>仓库</span>
+      <input bind:value={repo} placeholder="YadOwO/yado_ai" autocomplete="off" spellcheck="false" />
+    </label>
+  {/if}
+
+  <label class="field">
+    <span>开发分支</span>
+    <input bind:value={branch} autocomplete="off" spellcheck="false" />
+  </label>
+  {#if initial !== null && branch.trim() !== initial.branch}
+    <p class="hint">换分支后从新分支的最新提交开始 review。</p>
+  {/if}
+
+  <div class="field">
+    <span>什么时候跑</span>
+    <div class="inline">
+      <select bind:value={scheduleKind} aria-label="调度方式">
+        <option value="daily">每天</option>
+        <option value="interval">每隔</option>
+        <option value="cron">cron</option>
+      </select>
+      {#if scheduleKind === 'daily'}
+        <input type="time" bind:value={time} required aria-label="时间" />
+      {:else if scheduleKind === 'interval'}
+        <input class="narrow" type="number" min="5" step="5" bind:value={minutes} aria-label="分钟" />
+        <span class="muted">分钟</span>
+      {:else}
+        <input class="mono" bind:value={expression} aria-label="cron 表达式" spellcheck="false" />
+      {/if}
+      {#if scheduleKind !== 'interval'}
+        <select bind:value={timezone} aria-label="时区">
+          {#each timezones as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      {/if}
+    </div>
+  </div>
+
+  {#if initial === null}
+    <p class="hint">新实例是演练模式：只出报告不推送，看过结果再改成推送。从现在的最新提交开始 review。</p>
+  {:else}
+    <div class="field">
+      <span>模式</span>
+      <div class="segmented" role="group" aria-label="模式">
+        <button type="button" aria-pressed={isDryRun} onclick={() => (isDryRun = true)}>演练</button>
+        <button type="button" aria-pressed={!isDryRun} onclick={() => (isDryRun = false)}>推送</button>
+      </div>
+    </div>
+    <p class="hint">演练只出报告；推送会把复审通过的修复直接推到开发分支。</p>
+    <label class="field">
+      <span>最多几轮</span>
+      <input class="narrow" type="number" min="1" max="5" bind:value={maxRounds} />
+    </label>
+    {#each ROLES as { role, label } (role)}
+      <label class="field">
+        <span>{label}模型</span>
+        <select bind:value={models[role]}>
+          <option value="">跟随全局（{machine?.settings?.models[role] ?? '—'}）</option>
+          {#each [...new Set([...(machine?.models ?? []), ...(models[role] === '' ? [] : [models[role]])])] as model (model)}
+            <option value={model}>{model}</option>
+          {/each}
+        </select>
+      </label>
+    {/each}
+  {/if}
+
+  {#if errorText !== null}
+    <p class="error-banner">{errorText}</p>
+  {/if}
+  <div class="actions">
+    <button class="btn" type="button" onclick={onClose}>取消</button>
+    <button class="btn btn-primary" type="submit" disabled={commandState.isBusy || machineId === ''}>
+      {initial === null ? '新建' : '保存'}
+    </button>
+  </div>
+</form>
+
+<style>
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg);
+  }
+
+  .field {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    max-width: 640px;
+  }
+
+  .field > span {
+    color: var(--muted);
+  }
+
+  .field .segmented {
+    justify-self: start;
+  }
+
+  .inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .narrow {
+    width: 80px;
+  }
+
+  .hint {
+    margin-left: 100px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  @media (max-width: 720px) {
+    .field {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+
+    .hint {
+      margin-left: 0;
+    }
+  }
+</style>

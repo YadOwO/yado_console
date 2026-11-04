@@ -1,6 +1,6 @@
 # yado_console
 
-芽豆统一管理端：一个网页管理芽豆全部产品，第一版只有意见反馈。纯静态单页应用（Svelte 5），
+芽豆统一管理端：一个网页管理芽豆全部产品，目前有意见反馈和 Agent（Mac 上自动流程的结果与控制）。纯静态单页应用（Svelte 5），
 由服务器上已有的 nginx 直接提供，直接调用各后端的管理接口。设计见 [docs/console-design.md](docs/console-design.md)。
 
 | 项目 | 值 |

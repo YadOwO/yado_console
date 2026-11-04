@@ -13,11 +13,25 @@ export const current = $state({ path: location.pathname, search: location.search
 export type Route =
   | { name: 'tickets' }
   | { name: 'conversation'; id: string }
+  | { name: 'agents' }
+  | { name: 'agentInbox' }
+  | { name: 'agentRuns' }
+  | { name: 'agentRun'; machineId: string; runId: string }
   | { name: 'callback' }
   | { name: 'notFound' };
 
 /** 对话详情的路径：/feedback/conversations/<对话 ID> */
 const CONVERSATION_PATH = /^\/feedback\/conversations\/([0-9a-f-]{36})$/i;
+
+/** agent 运行详情的路径：/agents/runs/<机器 ID>/<运行 ID> */
+const AGENT_RUN_PATH = /^\/agents\/runs\/([a-z0-9-]{1,40})\/([\w.-]{1,200})$/;
+
+/** agent 的固定页面 */
+const AGENT_PAGES: Record<string, Route> = {
+  '/agents': { name: 'agents' },
+  '/agents/inbox': { name: 'agentInbox' },
+  '/agents/runs': { name: 'agentRuns' },
+};
 
 /** 按路径匹配页面 */
 export function matchRoute(path: string): Route {
@@ -26,6 +40,14 @@ export function matchRoute(path: string): Route {
   }
   if (path === CALLBACK_PATH) {
     return { name: 'callback' };
+  }
+  const agentPage = AGENT_PAGES[path];
+  if (agentPage !== undefined) {
+    return agentPage;
+  }
+  const agentRun = AGENT_RUN_PATH.exec(path);
+  if (agentRun?.[1] !== undefined && agentRun[2] !== undefined) {
+    return { name: 'agentRun', machineId: agentRun[1], runId: agentRun[2] };
   }
   const id = CONVERSATION_PATH.exec(path)?.[1];
   if (id !== undefined) {

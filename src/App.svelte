@@ -11,6 +11,10 @@
   import { IS_AUTH_DEV_BYPASS, LOGTO_APP_ID } from './lib/config';
   import { errorMessage, isUnauthorized } from './lib/http';
   import { current, handleLinkClick, matchRoute, navigate } from './lib/router.svelte';
+  import AgentInbox from './modules/agents/Inbox.svelte';
+  import AgentOverview from './modules/agents/Overview.svelte';
+  import AgentRunDetail from './modules/agents/RunDetail.svelte';
+  import AgentRunList from './modules/agents/RunList.svelte';
   import Conversation from './modules/feedback/Conversation.svelte';
   import TicketList from './modules/feedback/TicketList.svelte';
 
@@ -30,6 +34,8 @@
 
   const route = $derived(matchRoute(current.path));
   const pendingCount = $derived(adminStatus.value?.pendingTicketCount ?? 0);
+  const agentInboxCount = $derived(adminStatus.value?.agentInboxCount ?? 0);
+  const isAgentPage = $derived(route.name.startsWith('agent'));
 
   /** 处理登录回调，确认已登录且是管理员 */
   async function boot(): Promise<void> {
@@ -97,6 +103,12 @@
             <span class="badge" aria-label="{pendingCount} 条待处理">{pendingCount}</span>
           {/if}
         </a>
+        <a class="nav-item" href="/agents" aria-current={isAgentPage ? 'page' : undefined}>
+          <span>Agent</span>
+          {#if agentInboxCount > 0}
+            <span class="badge" aria-label="{agentInboxCount} 条待办">{agentInboxCount}</span>
+          {/if}
+        </a>
       </div>
       <div class="account">
         <span class="account-name" title={displayName}>{displayName}</span>
@@ -109,6 +121,16 @@
       {:else if route.name === 'conversation'}
         {#key route.id}
           <Conversation id={route.id} />
+        {/key}
+      {:else if route.name === 'agents'}
+        <AgentOverview />
+      {:else if route.name === 'agentInbox'}
+        <AgentInbox />
+      {:else if route.name === 'agentRuns'}
+        <AgentRunList />
+      {:else if route.name === 'agentRun'}
+        {#key `${route.machineId}/${route.runId}`}
+          <AgentRunDetail machineId={route.machineId} runId={route.runId} />
         {/key}
       {:else}
         <p class="empty">页面不存在，<a class="link" href="/feedback">回到意见反馈</a></p>
