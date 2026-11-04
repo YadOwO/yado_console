@@ -2,7 +2,7 @@
  * Agent 管理接口：yado_hub `/v1/admin/agents/*`，结构以 yado_hub 的 openapi.json 为准。
  *
  * 流程跑在 Mac 上的 agentd 里，hub 只存它同步上来的摘要。页面上的操作都是「发指令」：
- * hub 存下指令，agentd 下次同步（约 5 秒）时取走执行并回报结果，页面轮询指令状态。
+ * hub 存下指令，agentd 下次来问时（每分钟一次）取走执行并回报结果，页面轮询指令状态。
  */
 import { HUB } from '../../lib/hub';
 import { request } from '../../lib/http';
@@ -236,7 +236,8 @@ export type CommandInput =
         pausedFlows: string[];
       }>;
     }
-  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' } };
+  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' } }
+  | { type: 'sync.now'; payload: Record<string, never> };
 
 /** 修改实例的参数 */
 export type UpdateInstancePayload = Extract<CommandInput, { type: 'instance.update' }>['payload'];

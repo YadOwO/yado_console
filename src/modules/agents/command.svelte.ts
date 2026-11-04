@@ -1,7 +1,7 @@
 /**
  * 发指令并等 Mac 回报结果。
  *
- * agentd 每 5 秒同步一次，正常几秒内就有结果；新建实例要 clone 仓库，可能要几十秒。
+ * agentd 每分钟来问一次有没有指令，正常一分钟左右有结果；新建实例要 clone 仓库，还要再多几十秒。
  * 页面底部的提示条（CommandToast）显示最近一条指令的进度；执行期间禁用各操作按钮，避免连点发出重复指令。
  */
 import { errorMessage } from '../../lib/http';
@@ -11,10 +11,10 @@ import { getCommand, sendCommand, type CommandInput, type ICommand } from './api
 const POLL_INTERVAL_MS = 1500;
 
 /** 最多等多久；超过后不再轮询，提示稍后刷新 */
-const POLL_TIMEOUT_MS = 120_000;
+const POLL_TIMEOUT_MS = 180_000;
 
-/** 等多久还没被取走就提示 Mac 可能离线 */
-const OFFLINE_HINT_MS = 15_000;
+/** 等多久还没被取走就提示 Mac 可能离线（Mac 每分钟来问一次，留点余量） */
+const OFFLINE_HINT_MS = 90_000;
 
 /** 成功的提示显示多久 */
 const OK_NOTICE_MS = 6000;
@@ -64,7 +64,7 @@ async function waitForResult(command: ICommand, label: string): Promise<ICommand
 export async function performCommand(machineId: string, input: CommandInput, label: string): Promise<boolean> {
   commandSequence += 1;
   commandState.isBusy = true;
-  commandState.notice = { text: `${label}：正在发给 Mac…`, tone: 'info' };
+  commandState.notice = { text: `${label}：已发出，Mac 每分钟来取一次指令，稍等…`, tone: 'info' };
   try {
     const result = await waitForResult(await sendCommand(machineId, input), label);
     if (result === null) {

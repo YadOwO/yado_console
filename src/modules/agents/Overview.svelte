@@ -3,14 +3,25 @@
    * Agent 总览：机器状态、今天的汇总、待办提醒、各流程实例（可新建、修改、暂停、立即运行、删除）、
    * 最近运行与全局设置。
    *
-   * 页面可见时每 10 秒刷新一次；表单打开时只刷新数据，不冲掉正在编辑的内容。
+   * 页面可见时每 10 秒从 hub 刷新一次；表单打开时只刷新数据，不冲掉正在编辑的内容。
+   * hub 上的数据是 Mac 最近一次上传时的状态（有新动态时一分钟内，否则一小时一次），「立即同步」让 Mac 马上传一次。
    */
   import { onMount } from 'svelte';
 
   import { refreshAdminStatus } from '../../lib/admin-status.svelte';
   import { formatFullTime, formatTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
-  import { getOverview, listRuns, runStatusClass, runStatusLabel, shortSha, type IInstance, type IOverview, type IRunListItem } from './api';
+  import {
+    getOverview,
+    listRuns,
+    runStatusClass,
+    runStatusLabel,
+    shortSha,
+    type IInstance,
+    type IMachine,
+    type IOverview,
+    type IRunListItem,
+  } from './api';
   import AgentTabs from './AgentTabs.svelte';
   import { commandState, performCommand } from './command.svelte';
   import InstanceForm from './InstanceForm.svelte';
@@ -67,6 +78,18 @@
     }
   }
 
+  /** 机器状态：是否在线、数据是几点的 */
+  function machineText(machine: IMachine): string {
+    return `${machine.isOnline ? '在线' : '离线'} · 数据更新于 ${formatTime(machine.lastSeenAt)}`;
+  }
+
+  /** 让 Mac 马上把最新状态传上来 */
+  async function syncNow(machine: IMachine): Promise<void> {
+    if (await performCommand(machine.id, { type: 'sync.now', payload: {} }, '立即同步')) {
+      await afterCommand();
+    }
+  }
+
   /** 删除实例，先确认 */
   function remove(instance: IInstance): void {
     if (confirm(`删除 ${instance.repo}（${instance.branch}）的${flowTitle(instance)}？运行记录会保留，不修清单会清空。`)) {
@@ -106,13 +129,12 @@
       <div class="machine">
         <span class="dot" class:online={machine.isOnline}></span>
         <span class="machine-name">{machine.id}</span>
-        <span class="muted" title={formatFullTime(machine.lastSeenAt)}>
-          {machine.isOnline ? '在线' : `离线，最后同步 ${formatTime(machine.lastSeenAt)}`}
-        </span>
+        <span class="muted" title={formatFullTime(machine.lastSeenAt)}>{machineText(machine)}</span>
         {#if machine.health !== null}
           <span class="muted">运行中 {machine.health.activeRuns} · 排队 {machine.health.queuedRuns}</span>
           {#if machine.health.status !== 'ok'}<span class="danger">{machine.health.detail}</span>{/if}
         {/if}
+        <button class="btn sync" type="button" disabled={commandState.isBusy} onclick={() => void syncNow(machine)}>立即同步</button>
       </div>
     {/each}
 
@@ -287,6 +309,10 @@
 
   .machine-name {
     font-weight: 500;
+  }
+
+  .machine .sync {
+    margin-left: auto;
   }
 
   .dot {
