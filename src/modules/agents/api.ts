@@ -7,11 +7,15 @@
 import { HUB } from '../../lib/hub';
 import { request } from '../../lib/http';
 
-/** 调度：每天定时、每隔 N 分钟、cron 表达式 */
+/** 调度：每天定时、每隔 N 分钟、cron 表达式，或者只手动（一次实现：每次在 Mac 上带着需求提） */
 export type Schedule =
   | { kind: 'daily'; time: string; timezone: string }
   | { kind: 'interval'; minutes: number }
-  | { kind: 'cron'; expression: string; timezone: string };
+  | { kind: 'cron'; expression: string; timezone: string }
+  | { kind: 'manual' };
+
+/** 一次实现的流程类型：只能在 Mac 上用 agentctl 提需求，页面上不能立即运行，只推新分支 */
+export const IMPLEMENT_FLOW = 'implement';
 
 /** 调用模型的角色 */
 export type Role = 'reviewer' | 'lead' | 'fixer';
@@ -24,7 +28,15 @@ export const ROLES: { role: Role; label: string }[] = [
 ];
 
 /** 运行状态 */
-export type RunStatus = 'queued' | 'running' | 'succeeded' | 'needs_attention' | 'failed' | 'canceled' | 'interrupted';
+export type RunStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting'
+  | 'succeeded'
+  | 'needs_attention'
+  | 'failed'
+  | 'canceled'
+  | 'interrupted';
 
 /** 运行的一步 */
 export interface IStep {
@@ -274,6 +286,8 @@ export type CommandInput =
   | { type: 'instance.delete'; payload: { id: string } }
   | { type: 'instance.run'; payload: { id: string } }
   | { type: 'run.cancel'; payload: { runId: string } }
+  /** 一次实现：确认开工 */
+  | { type: 'run.confirm'; payload: { runId: string } }
   | {
       type: 'settings.update';
       payload: Partial<{
@@ -360,6 +374,7 @@ export function getCommand(id: string): Promise<ICommand> {
 const RUN_STATUS = new Map<string, { label: string; tone: string }>([
   ['queued', { label: '排队中', tone: 'neutral' }],
   ['running', { label: '运行中', tone: 'neutral' }],
+  ['waiting', { label: '等你确认', tone: 'pending' }],
   ['succeeded', { label: '完成', tone: 'resolved' }],
   ['needs_attention', { label: '要你处理', tone: 'pending' }],
   ['failed', { label: '失败', tone: 'danger' }],
@@ -398,6 +413,8 @@ export function verdictLabel(verdict: string | null): string {
       return '交给你';
     case 'defer':
       return '以后再做';
+    case 'attention':
+      return '重点看';
     default:
       return '未判';
   }

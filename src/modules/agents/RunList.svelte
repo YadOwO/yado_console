@@ -13,7 +13,7 @@
   import RunItems from './RunItems.svelte';
 
   /** 状态筛选项 */
-  const STATUSES = ['needs_attention', 'succeeded', 'failed', 'running', 'queued', 'canceled', 'interrupted'];
+  const STATUSES = ['needs_attention', 'waiting', 'succeeded', 'failed', 'running', 'queued', 'canceled', 'interrupted'];
 
   const instance = $derived(queryParam('instance') ?? '');
   const status = $derived(queryParam('status') ?? '');

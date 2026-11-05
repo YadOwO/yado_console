@@ -9,6 +9,7 @@
 
   import {
     BROWSER_TIMEZONE,
+    IMPLEMENT_FLOW,
     ROLES,
     type IInstance,
     type IMachine,
@@ -52,7 +53,7 @@
   let branch = $state(initial?.branch ?? 'dev');
   let scheduleKind = $state<Schedule['kind']>(initialSchedule.kind);
   let time = $state(initialSchedule.kind === 'daily' ? initialSchedule.time : '18:00');
-  let timezone = $state(initialSchedule.kind === 'interval' ? 'Asia/Shanghai' : initialSchedule.timezone);
+  let timezone = $state('timezone' in initialSchedule ? initialSchedule.timezone : 'Asia/Shanghai');
   let minutes = $state(initialSchedule.kind === 'interval' ? initialSchedule.minutes : 60);
   let expression = $state(initialSchedule.kind === 'cron' ? initialSchedule.expression : '0 18 * * *');
   let isDryRun = $state(initial?.isDryRun ?? true);
@@ -67,11 +68,15 @@
 
   /** 代码清理：每周挑改得多的文件做不改行为的重构，没有「review 到哪」 */
   const isCleanup = $derived(flowType === 'cleanup');
+  /** 一次实现：调度固定只手动，在 Mac 上用 agentctl 提需求；只推新分支，没有演练模式和轮数 */
+  const isImplement = $derived(flowType === IMPLEMENT_FLOW);
   /** 推送的是什么：review 推修复，代码清理推重构 */
   const changeNoun = $derived(isCleanup ? '重构' : '修复');
   /** 新建时的说明 */
   const createHint = $derived(
-    isCleanup
+    isImplement
+      ? '在 Mac 上用 agentctl implement <实例> <需求> 提需求；主审问清楚后在待办里确认开工，实现完推到新分支 feat/…，不碰开发分支。'
+      : isCleanup
       ? '每周挑最近改得多的几个文件做不改行为的小重构。新实例是演练模式：只出报告不推送，看过结果再改成推送。'
       : flowType === 'review'
         ? '新实例是演练模式：只出报告不推送，看过结果再改成推送。从现在的最新提交开始 review。'
@@ -91,7 +96,7 @@
       timezone = schedule.timezone;
     } else if (schedule.kind === 'interval') {
       minutes = schedule.minutes;
-    } else {
+    } else if (schedule.kind === 'cron') {
       expression = schedule.expression;
       timezone = schedule.timezone;
     }
@@ -116,6 +121,9 @@
 
   /** 按表单内容组装调度 */
   function buildSchedule(): Schedule {
+    if (isImplement || scheduleKind === 'manual') {
+      return { kind: 'manual' };
+    }
     if (scheduleKind === 'daily') {
       return { kind: 'daily', time, timezone };
     }
@@ -233,6 +241,12 @@
     <p class="hint">换分支后从新分支的最新提交开始 review。</p>
   {/if}
 
+  {#if isImplement}
+    <div class="field">
+      <span>什么时候跑</span>
+      <span class="muted">只手动：每次在 Mac 上带着需求提</span>
+    </div>
+  {:else}
   <div class="field">
     <span>什么时候跑</span>
     <div class="inline">
@@ -261,10 +275,12 @@
   {#if scheduleKind === 'cron'}
     <p class="hint">cron 五段：分 时 日 月 周，例如 <span class="mono">0 4 * * 6</span> 是每周六 04:00。</p>
   {/if}
+  {/if}
 
   {#if initial === null}
     <p class="hint">{createHint}</p>
   {:else}
+    {#if !isImplement}
     <div class="field">
       <span>模式</span>
       <div class="segmented" role="group" aria-label="模式">
@@ -277,6 +293,7 @@
       <span>最多几轮</span>
       <input class="narrow" type="number" min="1" max="5" bind:value={maxRounds} />
     </label>
+    {/if}
     {#each ROLES as { role, label } (role)}
       <label class="field">
         <span>{label}模型</span>

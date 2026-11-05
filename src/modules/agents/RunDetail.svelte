@@ -30,8 +30,9 @@
   /** 自动刷新间隔（运行没结束时） */
   const REFRESH_INTERVAL_MS = 5000;
 
-  /** 问题按主审的判断分组，交给你的排最前；「以后再做」只有代码清理会判 */
+  /** 问题按主审的判断分组，交给你的排最前；「以后再做」只有代码清理会判，「重点关注」只有一次实现有 */
   const GROUPS: { verdict: string | null; title: string; tone: string }[] = [
+    { verdict: 'attention', title: '重点关注', tone: 'pending' },
     { verdict: 'escalate', title: '交给你', tone: 'pending' },
     { verdict: 'fix', title: '修', tone: 'resolved' },
     { verdict: 'defer', title: '以后再做', tone: 'info' },
@@ -44,7 +45,7 @@
     if (status === 'succeeded') {
       return 'resolved';
     }
-    if (status === 'needs_attention') {
+    if (status === 'needs_attention' || status === 'waiting') {
       return 'pending';
     }
     if (status === 'failed' || status === 'interrupted') {

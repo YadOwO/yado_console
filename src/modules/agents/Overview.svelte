@@ -13,6 +13,7 @@
   import { errorMessage } from '../../lib/http';
   import {
     getOverview,
+    IMPLEMENT_FLOW,
     listRuns,
     runStatusClass,
     runStatusLabel,
@@ -213,7 +214,11 @@
               <span class="tag">{flowTitle(instance)}</span>
               <span class="instance-state">
                 {#if !instance.isEnabled}<span class="status status-neutral">已暂停</span>{/if}
-                <span class="status {instance.isDryRun ? 'status-info' : 'status-resolved'}">{instance.isDryRun ? '演练' : '推送'}</span>
+                {#if instance.flowType === IMPLEMENT_FLOW}
+                  <span class="status status-resolved">推新分支</span>
+                {:else}
+                  <span class="status {instance.isDryRun ? 'status-info' : 'status-resolved'}">{instance.isDryRun ? '演练' : '推送'}</span>
+                {/if}
               </span>
             </div>
             <p class="instance-meta muted">
@@ -221,7 +226,7 @@
               {#if instance.isEnabled && instance.nextRunAt !== null}
                 · 下次 <time datetime={instance.nextRunAt} title={formatFullTime(instance.nextRunAt)}>{formatTime(instance.nextRunAt)}</time>
               {/if}
-              · 最多 {instance.maxRounds} 轮
+              {#if instance.flowType !== IMPLEMENT_FLOW}· 最多 {instance.maxRounds} 轮{/if}
               <!-- 代码清理没有「review 到哪」，cursor 恒为 null -->
               {#if instance.cursor !== null && instance.flowType !== 'cleanup'}
                 · review 到 <span class="mono">{shortSha(instance.cursor)}</span>
@@ -239,14 +244,17 @@
               </a>
             {/if}
             <div class="actions">
-              <button
-                class="btn"
-                type="button"
-                disabled={commandState.isBusy}
-                onclick={() => void act(instance, { type: 'instance.run', payload: { id: instance.id } }, '立即运行')}
-              >
-                立即运行
-              </button>
+              <!-- 一次实现每次都要带上需求，只能在 Mac 上用 agentctl implement 提 -->
+              {#if instance.flowType !== IMPLEMENT_FLOW}
+                <button
+                  class="btn"
+                  type="button"
+                  disabled={commandState.isBusy}
+                  onclick={() => void act(instance, { type: 'instance.run', payload: { id: instance.id } }, '立即运行')}
+                >
+                  立即运行
+                </button>
+              {/if}
               <button
                 class="btn"
                 type="button"
