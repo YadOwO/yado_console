@@ -145,7 +145,10 @@
 
 <section class="page">
   <header class="page-header">
-    <h1>意见反馈</h1>
+    <div class="page-title">
+      <h1>意见反馈</h1>
+      <p class="page-sub">用户从各产品发来的反馈</p>
+    </div>
     <div class="filters">
       <div class="segmented" role="group" aria-label="状态">
         {#each STATUS_FILTERS as option (option.value)}
@@ -219,20 +222,33 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
     max-width: 960px;
+    margin: 0 auto;
     padding: 24px;
   }
 
   .page-header {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
   }
 
+  .page-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .page-sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
   h1 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -249,8 +265,9 @@
     padding: 0;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
     list-style: none;
   }
 

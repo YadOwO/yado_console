@@ -30,22 +30,40 @@
 <style>
   .tabs {
     display: flex;
-    gap: 4px;
-    border-bottom: 1px solid var(--line);
+    align-self: flex-start;
+    gap: 2px;
+    max-width: 100%;
+    padding: 3px;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-sunken);
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .tabs a {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    margin-bottom: -1px;
-    padding: 6px 10px;
-    border-bottom: 2px solid transparent;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 7px;
     color: var(--muted);
+    white-space: nowrap;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .tabs a:hover {
+    color: var(--fg);
   }
 
   .tabs a[aria-current='page'] {
-    border-bottom-color: var(--fg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
     color: var(--fg);
     font-weight: 500;
   }
@@ -55,8 +73,9 @@
     padding: 0 5px;
     border-radius: 999px;
     background: var(--pending);
-    color: #FFFFFF;
+    color: var(--on-pending);
     font-size: 11px;
+    font-variant-numeric: tabular-nums;
     line-height: 18px;
     text-align: center;
   }
@@ -76,6 +95,7 @@
     border: 1px solid var(--field-border);
     border-radius: var(--radius);
     background: var(--surface);
+    box-shadow: var(--shadow-md);
   }
 
   .toast span {

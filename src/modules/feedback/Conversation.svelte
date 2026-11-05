@@ -418,8 +418,10 @@
   .conversation {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    width: 100%;
     max-width: 960px;
+    height: 100%;
+    margin: 0 auto;
   }
 
   .header {
@@ -428,6 +430,11 @@
     align-items: center;
     gap: 8px 16px;
     padding: 16px 24px 8px;
+    background: var(--surface);
+  }
+
+  .back {
+    font-size: 13px;
   }
 
   .back:hover {
@@ -522,6 +529,7 @@
     border: 1px solid var(--line);
     border-radius: 14px;
     background: var(--bubble-user);
+    box-shadow: var(--shadow-sm);
     overflow-wrap: anywhere;
     white-space: pre-wrap;
   }
@@ -546,6 +554,7 @@
     gap: 8px;
     padding: 12px 24px 16px;
     border-top: 1px solid var(--line);
+    background: var(--surface);
   }
 
   textarea {
@@ -558,6 +567,11 @@
     background: var(--field);
     resize: vertical;
     field-sizing: content;
+    transition: border-color 0.15s;
+  }
+
+  textarea:hover {
+    border-color: var(--line-strong);
   }
 
   .composer-bar {

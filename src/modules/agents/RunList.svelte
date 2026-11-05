@@ -105,7 +105,10 @@
 
 <section class="page">
   <header class="page-header">
-    <h1>Agent</h1>
+    <div class="page-title">
+      <h1>Agent</h1>
+      <p class="page-sub">每次运行的结论与过程</p>
+    </div>
     <div class="filters">
       <select aria-label="实例" value={instance} onchange={(event) => setFilter(event.currentTarget.value, status)}>
         <option value="">全部实例</option>
@@ -149,20 +152,33 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
     max-width: 960px;
+    margin: 0 auto;
     padding: 24px 24px 80px;
   }
 
   .page-header {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
   }
 
+  .page-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .page-sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
   h1 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.02em;
   }

@@ -31,13 +31,27 @@
   const REFRESH_INTERVAL_MS = 5000;
 
   /** 问题按主审的判断分组，交给你的排最前；「以后再做」只有代码清理会判 */
-  const GROUPS: { verdict: string | null; title: string }[] = [
-    { verdict: 'escalate', title: '交给你' },
-    { verdict: 'fix', title: '修' },
-    { verdict: 'defer', title: '以后再做' },
-    { verdict: 'wontfix', title: '不修' },
-    { verdict: null, title: '还没判' },
+  const GROUPS: { verdict: string | null; title: string; tone: string }[] = [
+    { verdict: 'escalate', title: '交给你', tone: 'pending' },
+    { verdict: 'fix', title: '修', tone: 'resolved' },
+    { verdict: 'defer', title: '以后再做', tone: 'info' },
+    { verdict: 'wontfix', title: '不修', tone: 'muted' },
+    { verdict: null, title: '还没判', tone: 'muted' },
   ];
+
+  /** 结论卡与状态圆点的颜色跟着运行状态走 */
+  function statusTone(status: string): string {
+    if (status === 'succeeded') {
+      return 'resolved';
+    }
+    if (status === 'needs_attention') {
+      return 'pending';
+    }
+    if (status === 'failed' || status === 'interrupted') {
+      return 'danger';
+    }
+    return status === 'canceled' ? 'muted' : 'info';
+  }
 
   let run = $state<IRunDetail | null>(null);
   let errorText = $state<string | null>(null);
@@ -122,12 +136,13 @@
           <button class="btn danger" type="button" disabled={commandState.isBusy} onclick={() => void cancel()}>取消</button>
         {/if}
       </div>
-      <p class="muted" title={formatFullTime(run.queuedAt)}><span class="mono">{run.id}</span> · {metaText(run)}</p>
+      <p class="meta-line muted" title={formatFullTime(run.queuedAt)}><span class="mono">{run.id}</span> · {metaText(run)}</p>
     </header>
 
     {#if run.summary !== null || run.reason !== null}
-      <div class="card">
-        {#if run.summary !== null}<p>{run.summary}</p>{/if}
+      <div class="card summary-card tone-{statusTone(run.status)}">
+        <span class="card-label">结论</span>
+        {#if run.summary !== null}<p class="summary-text">{run.summary}</p>{/if}
         {#if run.reason !== null}<p class="reason">{run.reason}</p>{/if}
       </div>
     {/if}
@@ -151,8 +166,12 @@
     </dl>
 
     {#each groups as group (group.title)}
-      <h2>{group.title}（{group.findings.length}）</h2>
-      <ul class="list">
+      <h2 class="group-head">
+        <span class="group-dot tone-{group.tone}"></span>
+        {group.title}
+        <span class="group-count">{group.findings.length}</span>
+      </h2>
+      <ul class="list findings tone-{group.tone}">
         {#each group.findings as finding (finding.id)}
           <li class="finding">
             <div class="meta">
@@ -173,10 +192,11 @@
       </ul>
     {/each}
 
-    <h2>步骤</h2>
+    <h2 class="group-head">步骤<span class="group-count">{run.steps.length}</span></h2>
     <ul class="list">
       {#each run.steps as step (step.key)}
         <li class="step">
+          <span class="step-dot {step.status}"></span>
           <span class="mono step-key">{step.key}</span>
           <span class="step-model muted">{step.model ?? ''}</span>
           <span class={step.status === 'failed' ? 'status status-danger' : step.status === 'running' ? 'status status-neutral' : 'muted'}>
@@ -188,7 +208,7 @@
     </ul>
 
     {#if run.events.length > 0}
-      <details class="card">
+      <details class="card timeline">
         <summary>时间线（{run.events.length}）</summary>
         <ol class="events">
           {#each run.events as event (event.id)}
@@ -210,12 +230,20 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+    width: 100%;
     max-width: 960px;
+    margin: 0 auto;
     padding: 24px 24px 80px;
   }
 
   .back {
     align-self: flex-start;
+    font-size: 13px;
+    transition: color 0.15s;
+  }
+
+  .back:hover {
+    color: var(--fg);
   }
 
   .head {
@@ -232,21 +260,23 @@
   }
 
   h1 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.02em;
     overflow-wrap: anywhere;
   }
 
-  h2 {
-    margin-top: 6px;
-    font-size: 15px;
-    font-weight: 600;
+  .meta-line {
+    font-size: 12px;
   }
 
   .btn.danger {
     margin-left: auto;
     color: var(--danger);
+  }
+
+  .btn.danger:hover:not(:disabled) {
+    border-color: var(--danger);
   }
 
   .card {
@@ -255,13 +285,37 @@
     gap: 6px;
     padding: 12px 16px;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
   }
 
-  .card summary {
-    cursor: pointer;
+  /* 结论卡左侧色条与问题分组共用一个语义色 */
+  .summary-card {
+    position: relative;
+    padding-left: 20px;
+    overflow: hidden;
+  }
+
+  .summary-card::before {
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    left: 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--tone);
+    content: '';
+  }
+
+  .card-label {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .summary-text {
     font-weight: 500;
+    overflow-wrap: anywhere;
   }
 
   .reason {
@@ -272,8 +326,14 @@
   .facts {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
-    gap: 4px 16px;
+    gap: 5px 16px;
     margin: 0;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    font-size: 13px;
   }
 
   .facts dt {
@@ -282,10 +342,65 @@
 
   .facts dd {
     margin: 0;
+    overflow-wrap: anywhere;
   }
 
   .facts a {
     text-decoration: underline;
+  }
+
+  .group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .group-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tone);
+  }
+
+  .group-count {
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--chip-bg);
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    line-height: 20px;
+  }
+
+  .summary-card,
+  .group-dot,
+  .findings {
+    --tone: var(--line-strong);
+  }
+
+  .tone-resolved {
+    --tone: var(--resolved);
+  }
+
+  .tone-pending {
+    --tone: var(--pending);
+  }
+
+  .tone-danger {
+    --tone: var(--danger);
+  }
+
+  .tone-info {
+    --tone: var(--info);
+  }
+
+  .tone-muted {
+    --tone: var(--line-strong);
   }
 
   .list {
@@ -293,13 +408,18 @@
     padding: 0;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
     list-style: none;
   }
 
+  .findings {
+    border-left: 3px solid var(--tone);
+  }
+
   .list li {
-    padding: 10px 16px;
+    padding: 11px 16px;
   }
 
   .list li + li {
@@ -332,7 +452,32 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 12px;
+    gap: 4px 10px;
+  }
+
+  .step-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--line-strong);
+  }
+
+  .step-dot.succeeded {
+    background: var(--resolved);
+  }
+
+  .step-dot.failed {
+    background: var(--danger);
+  }
+
+  .step-dot.running {
+    background: var(--pending);
+  }
+
+  /* 步骤行已经有状态圆点，状态胶囊里不再重复一个 */
+  .step .status::before {
+    display: none;
   }
 
   .step-key {
@@ -354,10 +499,15 @@
     overflow-wrap: anywhere;
   }
 
+  .timeline summary {
+    cursor: pointer;
+    font-weight: 500;
+  }
+
   .events {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
     margin: 6px 0 0;
     padding: 0;
     list-style: none;
@@ -383,6 +533,10 @@
   @media (max-width: 720px) {
     .page {
       padding: 16px 16px 80px;
+    }
+
+    .step-key {
+      min-width: 0;
     }
   }
 </style>

@@ -37,6 +37,8 @@
   const pendingCount = $derived(adminStatus.value?.pendingTicketCount ?? 0);
   const agentInboxCount = $derived(adminStatus.value?.agentInboxCount ?? 0);
   const isAgentPage = $derived(route.name.startsWith('agent'));
+  /** 账号头像上显示的首字 */
+  const accountInitial = $derived(displayName.trim().slice(0, 1).toUpperCase());
 
   /** 处理登录回调，确认已登录且是管理员 */
   async function boot(): Promise<void> {
@@ -99,19 +101,31 @@
           href="/feedback"
           aria-current={route.name === 'tickets' || route.name === 'conversation' ? 'page' : undefined}
         >
-          <span>意见反馈</span>
+          <span class="nav-label">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <path d="M4.5 6.5A2.5 2.5 0 0 1 7 4h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 16h-6.5L5.5 20v-4H7a2.5 2.5 0 0 1-2.5-2.5z" stroke-linejoin="round" />
+            </svg>
+            <span>意见反馈</span>
+          </span>
           {#if pendingCount > 0}
             <span class="badge" aria-label="{pendingCount} 条待处理">{pendingCount}</span>
           {/if}
         </a>
         <a class="nav-item" href="/agents" aria-current={isAgentPage ? 'page' : undefined}>
-          <span>Agent</span>
+          <span class="nav-label">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <rect x="4.5" y="8" width="15" height="11" rx="3" />
+              <path d="M12 4v4M9 13h.01M15 13h.01M9.5 16h5" stroke-linecap="round" />
+            </svg>
+            <span>Agent</span>
+          </span>
           {#if agentInboxCount > 0}
             <span class="badge" aria-label="{agentInboxCount} 条待办">{agentInboxCount}</span>
           {/if}
         </a>
       </div>
       <div class="account">
+        <span class="avatar" aria-hidden="true">{accountInitial}</span>
         <span class="account-name" title={displayName}>{displayName}</span>
         <button class="btn" type="button" onclick={() => void signOut()}>退出</button>
       </div>
@@ -172,9 +186,10 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    padding: 20px 12px;
+    gap: 22px;
+    padding: 20px 14px;
     border-right: 1px solid var(--line);
+    background: var(--surface);
   }
 
   .brand {
@@ -199,20 +214,40 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    height: 34px;
+    height: 36px;
     padding: 0 10px;
-    border-radius: 8px;
+    border-radius: 9px;
     color: var(--muted);
+    white-space: nowrap;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .nav-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .nav-item svg {
+    flex-shrink: 0;
+    opacity: 0.75;
   }
 
   .nav-item:hover {
-    background: var(--line);
+    background: var(--surface-sunken);
+    color: var(--fg);
   }
 
   .nav-item[aria-current='page'] {
-    background: var(--surface);
+    background: var(--surface-sunken);
+    box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg);
     font-weight: 500;
+  }
+
+  .nav-item[aria-current='page'] svg {
+    opacity: 1;
   }
 
   .badge {
@@ -220,8 +255,9 @@
     padding: 0 6px;
     border-radius: 999px;
     background: var(--pending);
-    color: #FFFFFF;
+    color: var(--on-pending);
     font-size: 12px;
+    font-variant-numeric: tabular-nums;
     line-height: 20px;
     text-align: center;
   }
@@ -230,7 +266,22 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 8px;
+    padding: 14px 8px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .avatar {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface-sunken);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .account-name {
@@ -238,13 +289,22 @@
     min-width: 0;
     overflow: hidden;
     color: var(--muted);
+    font-size: 13px;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .account .btn {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 13px;
   }
 
   .main {
     min-height: 0;
     overflow-y: auto;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
   }
 
   .link {
@@ -290,7 +350,8 @@
     }
 
     .brand span,
-    .account-name {
+    .account-name,
+    .avatar {
       display: none;
     }
 
@@ -300,10 +361,22 @@
 
     .nav {
       flex-direction: row;
+      gap: 2px;
+    }
+
+    .nav-item {
+      height: 32px;
+      padding: 0 8px;
+      gap: 6px;
+    }
+
+    .nav-label {
+      gap: 6px;
     }
 
     .account {
       padding: 0;
+      border-top: 0;
     }
   }
 </style>

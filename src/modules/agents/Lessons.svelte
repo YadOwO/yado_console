@@ -125,7 +125,10 @@
 
 <section class="page">
   <header class="page-header">
-    <h1>Agent</h1>
+    <div class="page-title">
+      <h1>Agent</h1>
+      <p class="page-sub">主审总结的规则，提出后马上生效</p>
+    </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
   <AgentTabs active="lessons" />
@@ -219,18 +222,32 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
     max-width: 960px;
+    margin: 0 auto;
     padding: 24px 24px 80px;
   }
 
   .page-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
+    gap: 12px;
+  }
+
+  .page-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .page-sub {
+    color: var(--muted);
+    font-size: 13px;
   }
 
   h1 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -243,7 +260,7 @@
 
   .group-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
   }
 
@@ -254,12 +271,18 @@
   }
 
   .count {
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--chip-bg);
     color: var(--muted);
     font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 20px;
     white-space: nowrap;
   }
 
   .count.full {
+    background: var(--pending-bg);
     color: var(--pending);
   }
 
@@ -268,25 +291,40 @@
     padding: 0;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
     list-style: none;
   }
 
   /* 一条两行：编号、规则（理由跟在后面）、按钮；下面一行是命中、来源与日期 */
   .lesson {
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
     align-items: baseline;
-    gap: 2px 8px;
-    padding: 8px 12px 8px 16px;
+    gap: 3px 8px;
+    padding: 10px 12px 10px 16px;
+    transition: background-color 0.15s;
+  }
+
+  .lesson:hover {
+    background: var(--surface-hover);
   }
 
   .lesson + .lesson {
     border-top: 1px solid var(--line);
   }
 
+  .id {
+    justify-self: start;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--chip-bg);
+    line-height: 18px;
+  }
+
   .rule {
+    font-size: 14px;
     overflow-wrap: anywhere;
   }
 
@@ -299,7 +337,7 @@
     grid-row: 1 / span 2;
     grid-column: 3;
     align-self: center;
-    height: 26px;
+    height: 28px;
     padding: 0 10px;
     font-size: 12px;
   }

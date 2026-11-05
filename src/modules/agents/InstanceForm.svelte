@@ -309,7 +309,7 @@
     padding: 16px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: var(--bg);
+    background: var(--surface-sunken);
   }
 
   .field {
@@ -349,6 +349,8 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
   }
 
   @media (max-width: 720px) {

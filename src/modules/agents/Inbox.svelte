@@ -86,7 +86,10 @@
 
 <section class="page">
   <header class="page-header">
-    <h1>Agent</h1>
+    <div class="page-title">
+      <h1>Agent</h1>
+      <p class="page-sub">主审交给你的问题，和需要你看一下的运行</p>
+    </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
   <AgentTabs active="inbox" />
@@ -102,7 +105,11 @@
   {:else}
     <ul class="items">
       {#each items as item (`${item.machineId}/${item.id}`)}
-        <li class="item">
+        <li
+          class="item"
+          class:tone-pending={item.kind === 'finding' || item.runStatus === 'needs_attention'}
+          class:tone-danger={item.runStatus === 'failed' || item.runStatus === 'interrupted'}
+        >
           <div class="meta">
             {#if item.kind === 'finding'}
               <span class="status status-pending">要你决定</span>
@@ -175,18 +182,32 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
     max-width: 960px;
+    margin: 0 auto;
     padding: 24px 24px 80px;
   }
 
   .page-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
+    gap: 12px;
+  }
+
+  .page-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .page-sub {
+    color: var(--muted);
+    font-size: 13px;
   }
 
   h1 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -194,20 +215,42 @@
   .items {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
   .item {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 14px 16px;
+    gap: 7px;
+    padding: 14px 16px 12px 20px;
+    overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* 左侧色条：橙=要你决定，红=运行失败或被中断 */
+  .item::before {
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 0;
+    width: 3px;
+    background: var(--line-strong);
+    content: '';
+  }
+
+  .item.tone-pending::before {
+    background: var(--pending);
+  }
+
+  .item.tone-danger::before {
+    background: var(--danger);
   }
 
   .meta {
@@ -228,12 +271,25 @@
   }
 
   .title {
-    font-weight: 500;
+    font-size: 15px;
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
 
-  .location,
+  .location {
+    display: inline-block;
+    max-width: 100%;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: var(--surface-sunken);
+    overflow-wrap: anywhere;
+  }
+
   .detail {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface-sunken);
+    color: var(--muted);
     overflow-wrap: anywhere;
   }
 
@@ -248,8 +304,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
+    margin-top: 2px;
+    padding: 12px;
+    border-radius: 10px;
+    background: var(--surface-sunken);
   }
 
   .hint {
@@ -262,15 +320,24 @@
     max-height: 40vh;
     padding: 8px 12px;
     border: 1px solid var(--field-border);
-    border-radius: var(--radius);
+    border-radius: 8px;
     background: var(--field);
     resize: vertical;
     field-sizing: content;
+    transition: border-color 0.15s;
+  }
+
+  textarea:hover {
+    border-color: var(--line-strong);
   }
 
   @media (max-width: 720px) {
     .page {
       padding: 16px 16px 80px;
+    }
+
+    .actions {
+      justify-content: flex-start;
     }
   }
 </style>

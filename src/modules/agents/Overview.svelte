@@ -110,7 +110,10 @@
 
 <section class="page">
   <header class="page-header">
-    <h1>Agent</h1>
+    <div class="page-title">
+      <h1>Agent</h1>
+      <p class="page-sub">Mac 上的自动 review、修复与清理</p>
+    </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
   <AgentTabs active="overview" />
@@ -128,33 +131,50 @@
     {#each machines as machine (machine.id)}
       <div class="machine">
         <span class="dot" class:online={machine.isOnline}></span>
-        <span class="machine-name">{machine.id}</span>
-        <span class="muted" title={formatFullTime(machine.lastSeenAt)}>{machineText(machine)}</span>
+        <div class="machine-text">
+          <span class="machine-name">{machine.id}</span>
+          <span class="muted machine-meta" title={formatFullTime(machine.lastSeenAt)}>{machineText(machine)}</span>
+        </div>
         {#if machine.health !== null}
-          <span class="muted">运行中 {machine.health.activeRuns} · 排队 {machine.health.queuedRuns}</span>
-          {#if machine.health.status !== 'ok'}<span class="danger">{machine.health.detail}</span>{/if}
+          <span class="machine-health">运行中 {machine.health.activeRuns} · 排队 {machine.health.queuedRuns}</span>
         {/if}
         <button class="btn sync" type="button" disabled={commandState.isBusy} onclick={() => void syncNow(machine)}>立即同步</button>
+        {#if machine.health !== null && machine.health.status !== 'ok'}
+          <p class="machine-error">{machine.health.detail}</p>
+        {/if}
       </div>
     {/each}
 
     {#if today !== null}
       <div class="stats" aria-label="今天">
-        <div><strong>{runCount}</strong><span>今天运行</span></div>
-        <div><strong>{today.findings.fixed}</strong><span>修复</span></div>
-        <div><strong>{today.findings.wontfix}</strong><span>不修</span></div>
-        <div><strong>{today.findings.escalated}</strong><span>交给你</span></div>
-        <div><strong>{today.pushed}</strong><span>推送</span></div>
-        <div><strong>{today.noChangeChecks}</strong><span>没新提交</span></div>
+        <div class="stats-head"><h2>今天</h2></div>
+        <div class="stats-grid">
+          <div><strong>{runCount}</strong><span>今天运行</span></div>
+          <div><strong class="tone-resolved">{today.findings.fixed}</strong><span>修复</span></div>
+          <div><strong class="tone-muted">{today.findings.wontfix}</strong><span>不修</span></div>
+          <div><strong class="tone-pending">{today.findings.escalated}</strong><span>交给你</span></div>
+          <div><strong>{today.pushed}</strong><span>推送</span></div>
+          <div><strong class="tone-muted">{today.noChangeChecks}</strong><span>没新提交</span></div>
+        </div>
       </div>
     {/if}
 
     {#if overview.inbox.length > 0}
-      <a class="inbox-banner" href="/agents/inbox">有 {overview.inbox.length} 条待办等你决定 →</a>
+      <a class="inbox-banner" href="/agents/inbox">
+        <span class="inbox-count">{overview.inbox.length}</span>
+        <span class="inbox-text">
+          <span class="inbox-title">条待办等你决定</span>
+          <span class="inbox-sub">主审交给你的问题，和需要你看一下的运行</span>
+        </span>
+        <span class="inbox-arrow" aria-hidden="true">→</span>
+      </a>
     {/if}
 
     <div class="section-header">
-      <h2>流程实例</h2>
+      <div class="section-title">
+        <h2>流程实例</h2>
+        <span class="section-count">{overview.instances.length}</span>
+      </div>
       <button
         class="btn"
         type="button"
@@ -181,15 +201,22 @@
     {:else}
       <ul class="instances">
         {#each overview.instances as instance (`${instance.machineId}/${instance.id}`)}
-          <li class="instance">
+          <li
+            class="instance"
+            class:paused={!instance.isEnabled}
+            class:live={instance.isEnabled && !instance.isDryRun}
+            class:dry={instance.isEnabled && instance.isDryRun}
+          >
             <div class="instance-head">
               <span class="repo">{instance.repo}</span>
               <span class="tag">{instance.branch}</span>
               <span class="tag">{flowTitle(instance)}</span>
-              {#if !instance.isEnabled}<span class="status status-neutral">已暂停</span>{/if}
-              <span class="status {instance.isDryRun ? 'status-neutral' : 'status-resolved'}">{instance.isDryRun ? '演练' : '推送'}</span>
+              <span class="instance-state">
+                {#if !instance.isEnabled}<span class="status status-neutral">已暂停</span>{/if}
+                <span class="status {instance.isDryRun ? 'status-info' : 'status-resolved'}">{instance.isDryRun ? '演练' : '推送'}</span>
+              </span>
             </div>
-            <p class="muted">
+            <p class="instance-meta muted">
               {instance.scheduleText}
               {#if instance.isEnabled && instance.nextRunAt !== null}
                 · 下次 <time datetime={instance.nextRunAt} title={formatFullTime(instance.nextRunAt)}>{formatTime(instance.nextRunAt)}</time>
@@ -201,9 +228,13 @@
               {/if}
             </p>
             {#if instance.lastRun !== null}
-              <a class="last-run" href="/agents/runs/{instance.machineId}/{instance.lastRun.id}">
+              <a
+                class="last-run"
+                href="/agents/runs/{instance.machineId}/{instance.lastRun.id}"
+                title={instance.lastRun.reason ?? instance.lastRun.summary ?? undefined}
+              >
                 <span class={runStatusClass(instance.lastRun.status)}>{runStatusLabel(instance.lastRun.status)}</span>
-                <span class="muted">{formatTime(instance.lastRun.queuedAt)}</span>
+                <span class="muted last-time">{formatTime(instance.lastRun.queuedAt)}</span>
                 <span class="last-summary">{instance.lastRun.reason ?? instance.lastRun.summary ?? ''}</span>
               </a>
             {/if}
@@ -260,7 +291,7 @@
     {#if recentRuns.length > 0}
       <div class="section-header">
         <h2>最近运行</h2>
-        <a class="link" href="/agents/runs">全部</a>
+        <a class="link" href="/agents/runs">全部 →</a>
       </div>
       <RunItems runs={recentRuns} />
     {/if}
@@ -281,20 +312,46 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
     max-width: 960px;
+    margin: 0 auto;
     padding: 24px 24px 80px;
   }
 
-  .page-header,
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .page-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .page-sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
   .section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    margin-top: 4px;
+  }
+
+  .section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
   }
 
   h1 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -304,91 +361,226 @@
     font-weight: 600;
   }
 
+  .section-count {
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--chip-bg);
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 20px;
+  }
+
   .machine {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 10px 14px;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .machine-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
   }
 
   .machine-name {
-    font-weight: 500;
+    font-weight: 600;
+  }
+
+  .machine-meta {
+    font-size: 12px;
+  }
+
+  .machine-health {
+    color: var(--muted);
+    font-size: 12px;
   }
 
   .machine .sync {
     margin-left: auto;
   }
 
+  .machine-error {
+    flex-basis: 100%;
+    color: var(--danger);
+    font-size: 13px;
+  }
+
   .dot {
-    width: 8px;
-    height: 8px;
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     background: var(--muted);
+    box-shadow: 0 0 0 3px var(--line);
   }
 
   .dot.online {
     background: var(--resolved);
-  }
-
-  .danger {
-    color: var(--danger);
+    box-shadow: 0 0 0 3px var(--resolved-bg);
   }
 
   .stats {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
   }
 
-  .stats div {
+  .stats-head {
+    padding: 12px 16px 0;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    padding: 6px 0 12px;
+  }
+
+  .stats-grid div {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 10px 4px;
+    padding: 6px 4px;
   }
 
-  .stats div + div {
+  .stats-grid div + div {
     border-left: 1px solid var(--line);
   }
 
-  .stats strong {
-    font-size: 20px;
+  .stats-grid strong {
+    font-size: 22px;
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 1.3;
   }
 
-  .stats span {
+  .stats-grid span {
     color: var(--muted);
     font-size: 12px;
   }
 
+  .tone-resolved {
+    color: var(--resolved);
+  }
+
+  .tone-pending {
+    color: var(--pending);
+  }
+
+  .tone-muted {
+    color: var(--muted);
+  }
+
   .inbox-banner {
-    padding: 10px 16px;
-    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: var(--radius-lg);
     background: var(--pending-bg);
     color: var(--pending);
-    font-weight: 500;
+  }
+
+  .inbox-count {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--pending);
+    color: var(--on-pending);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  .inbox-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .inbox-title {
+    font-weight: 600;
+  }
+
+  .inbox-sub {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .inbox-arrow {
+    margin-left: auto;
+    font-size: 16px;
+    transition: transform 0.15s;
+  }
+
+  .inbox-banner:hover .inbox-arrow {
+    transform: translateX(3px);
   }
 
   .instances {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
   .instance {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 14px 16px;
+    gap: 8px;
+    padding: 14px 16px 12px 20px;
+    overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .instance:hover {
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-md);
+  }
+
+  /* 左侧色条：绿=推送、蓝=演练、灰=暂停，扫一眼就知道实例现在怎么跑 */
+  .instance::before {
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: transparent;
+    content: '';
+  }
+
+  .instance.live::before {
+    background: var(--resolved);
+  }
+
+  .instance.dry::before {
+    background: var(--info);
+  }
+
+  .instance.paused::before {
+    background: var(--line-strong);
   }
 
   .instance-head {
@@ -399,8 +591,26 @@
   }
 
   .repo {
+    font-size: 15px;
     font-weight: 600;
     overflow-wrap: anywhere;
+  }
+
+  .instance-state {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .instance-meta {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  .instance-meta time,
+  .instance-meta .mono {
+    white-space: nowrap;
   }
 
   .last-run {
@@ -408,9 +618,19 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: var(--surface-sunken);
+  }
+
+  .last-time {
+    font-size: 12px;
+    white-space: nowrap;
   }
 
   .last-summary {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -423,29 +643,63 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
-    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+
+  .actions .btn {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 13px;
   }
 
   .btn.danger {
     color: var(--danger);
   }
 
+  .btn.danger:hover:not(:disabled) {
+    border-color: var(--danger);
+  }
+
   .link {
     color: var(--muted);
+    font-size: 13px;
     text-decoration: underline;
   }
 
   .settings {
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
   }
 
   .settings summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 12px 16px;
     cursor: pointer;
     font-weight: 500;
+    list-style: none;
+  }
+
+  .settings summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .settings summary::after {
+    color: var(--muted);
+    content: '›';
+    transform: rotate(90deg);
+    transition: transform 0.15s;
+  }
+
+  .settings[open] summary::after {
+    transform: rotate(-90deg);
   }
 
   @media (max-width: 720px) {
@@ -453,16 +707,39 @@
       padding: 16px 16px 80px;
     }
 
-    .stats {
+    .stats-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .stats div:nth-child(4) {
+    .stats-grid div:nth-child(4) {
       border-left: 0;
     }
 
-    .stats div:nth-child(n + 4) {
+    .stats-grid div:nth-child(n + 4) {
       border-top: 1px solid var(--line);
+    }
+
+    .instance-state {
+      margin-left: 0;
+    }
+
+    .actions {
+      justify-content: flex-start;
+    }
+
+    /* 手机上给上次运行的结论两行位置，不挤在一行截断 */
+    .last-run {
+      flex-wrap: wrap;
+    }
+
+    .last-summary {
+      display: -webkit-box;
+      flex-basis: 100%;
+      overflow: hidden;
+      white-space: normal;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
     }
   }
 </style>

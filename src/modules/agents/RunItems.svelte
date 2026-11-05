@@ -40,8 +40,9 @@
     padding: 0;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
     list-style: none;
   }
 
@@ -52,8 +53,9 @@
   .row {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 10px 16px;
+    gap: 5px;
+    padding: 12px 16px;
+    transition: background-color 0.15s;
   }
 
   .row:hover {
@@ -79,7 +81,12 @@
   }
 
   .summary {
+    display: -webkit-box;
+    overflow: hidden;
     color: var(--muted);
     overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 </style>

@@ -130,6 +130,8 @@
   .actions {
     display: flex;
     justify-content: flex-end;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
   }
 
   @media (max-width: 720px) {
