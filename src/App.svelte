@@ -12,6 +12,7 @@
   import { errorMessage, isUnauthorized } from './lib/http';
   import { current, handleLinkClick, matchRoute, navigate } from './lib/router.svelte';
   import AgentInbox from './modules/agents/Inbox.svelte';
+  import AgentLessons from './modules/agents/Lessons.svelte';
   import AgentOverview from './modules/agents/Overview.svelte';
   import AgentRunDetail from './modules/agents/RunDetail.svelte';
   import AgentRunList from './modules/agents/RunList.svelte';
@@ -132,6 +133,8 @@
         {#key `${route.machineId}/${route.runId}`}
           <AgentRunDetail machineId={route.machineId} runId={route.runId} />
         {/key}
+      {:else if route.name === 'agentLessons'}
+        <AgentLessons />
       {:else}
         <p class="empty">页面不存在，<a class="link" href="/feedback">回到意见反馈</a></p>
       {/if}

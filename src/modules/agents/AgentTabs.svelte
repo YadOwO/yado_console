@@ -1,12 +1,12 @@
 <script lang="ts">
   /**
-   * Agent 各页面顶部的标签（总览 / 待办 / 运行记录），以及底部的指令进度提示条。
+   * Agent 各页面顶部的标签（总览 / 待办 / 运行记录 / 经验），以及底部的指令进度提示条。
    */
   import { adminStatus } from '../../lib/admin-status.svelte';
   import { commandState, dismissNotice } from './command.svelte';
 
   /** 当前所在的标签 */
-  let { active }: { active: 'overview' | 'inbox' | 'runs' } = $props();
+  let { active }: { active: 'overview' | 'inbox' | 'runs' | 'lessons' } = $props();
 
   const inboxCount = $derived(adminStatus.value?.agentInboxCount ?? 0);
 </script>
@@ -17,6 +17,7 @@
     待办{#if inboxCount > 0}<span class="count">{inboxCount}</span>{/if}
   </a>
   <a href="/agents/runs" aria-current={active === 'runs' ? 'page' : undefined}>运行记录</a>
+  <a href="/agents/lessons" aria-current={active === 'lessons' ? 'page' : undefined}>经验</a>
 </nav>
 
 {#if commandState.notice !== null}

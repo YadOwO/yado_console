@@ -194,7 +194,11 @@
               {#if instance.isEnabled && instance.nextRunAt !== null}
                 · 下次 <time datetime={instance.nextRunAt} title={formatFullTime(instance.nextRunAt)}>{formatTime(instance.nextRunAt)}</time>
               {/if}
-              · 最多 {instance.maxRounds} 轮 · review 到 <span class="mono">{shortSha(instance.cursor)}</span>
+              · 最多 {instance.maxRounds} 轮
+              <!-- 代码清理没有「review 到哪」，cursor 恒为 null -->
+              {#if instance.cursor !== null && instance.flowType !== 'cleanup'}
+                · review 到 <span class="mono">{shortSha(instance.cursor)}</span>
+              {/if}
             </p>
             {#if instance.lastRun !== null}
               <a class="last-run" href="/agents/runs/{instance.machineId}/{instance.lastRun.id}">

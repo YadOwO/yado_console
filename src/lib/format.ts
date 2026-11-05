@@ -41,6 +41,28 @@ export function formatTime(iso: string, now: Date = new Date()): string {
   return FULL_DATE.format(date);
 }
 
+/**
+ * 只到日期的紧凑写法：今天、昨天、今年显示月日，更早显示年月日。用于不需要精确到时刻的地方，如创建日期。
+ *
+ * @param iso 后端返回的 ISO 8601 时间
+ * @param now 当前时间，测试时可传入
+ */
+export function formatDate(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  if (isSameDay(date, now)) {
+    return '今天';
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameDay(date, yesterday)) {
+    return '昨天';
+  }
+  return date.getFullYear() === now.getFullYear() ? MONTH_DAY.format(date) : FULL_DATE.format(date);
+}
+
 /** 完整时间，用于悬停提示，如 2026/10/30 14:32:05 */
 export function formatFullTime(iso: string): string {
   const date = new Date(iso);

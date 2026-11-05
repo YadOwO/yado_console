@@ -53,7 +53,7 @@ export interface IFinding {
   severity: string;
   category: string;
   source: string;
-  /** fix 修、wontfix 不修、escalate 交给你；还没判时为 null */
+  /** fix 修、wontfix 不修、escalate 交给你、defer 以后再做（代码清理）；还没判时为 null */
   verdict: string | null;
   reason: string | null;
   fixCommit: string | null;
@@ -130,7 +130,7 @@ export interface IInstance {
   /** 这个实例单独指定的模型 */
   models: Partial<Record<Role, string>>;
   nextRunAt: string | null;
-  /** 上次 review 到的提交 */
+  /** 上次 review 到的提交；代码清理没有，恒为 null */
   cursor: string | null;
   checks: string[];
   lastRun: { id: string; status: RunStatus; summary: string | null; reason: string | null; queuedAt: string; finishedAt: string | null } | null;
@@ -167,6 +167,49 @@ export interface IFlow {
   title: string;
   description: string;
   isPaused: boolean;
+  /** 新建这种流程的实例时默认的调度；旧版 agentd 没报时为 null */
+  defaultSchedule: Schedule | null;
+}
+
+/** 经验：主审总结的一句话规则，以后的 agent 都照着做，提出后马上生效 */
+export interface ILesson {
+  /** agentd 本地的经验 ID，显示为 L<id> */
+  id: number;
+  machineId: string;
+  /** global 所有仓库通用、repo 只用于 repo 那个仓库 */
+  scope: 'global' | 'repo';
+  /** scope 为 repo 时的 owner/name */
+  repo: string | null;
+  rule: string;
+  reason: string | null;
+  status: 'active' | 'void';
+  /** cleanup、review（那次运行的主审提出的）或 manual（在 Mac 上手动加的） */
+  source: string;
+  sourceRunId: string | null;
+  /** 这条替换掉的旧经验 */
+  replacesId: number | null;
+  /** 这条（已作废）被哪条新经验替换掉了 */
+  replacedById: number | null;
+  /** 之后的运行确认有问题违反了它的次数 */
+  hits: number;
+  lastHitAt: string | null;
+  createdAt: string;
+  voidedAt: string | null;
+}
+
+/** 某台机器生效中经验的上限 */
+export interface ILessonLimits {
+  machineId: string;
+  global: number;
+  repo: number;
+}
+
+/** 经验列表 */
+export interface ILessonList {
+  /** 全部机器的经验，含已作废的 */
+  lessons: ILesson[];
+  /** 旧版 agentd 没报上限的机器不在里面 */
+  limits: ILessonLimits[];
 }
 
 /** 跑 agentd 的机器 */
@@ -241,7 +284,10 @@ export type CommandInput =
       }>;
     }
   | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate'; note?: string } }
-  | { type: 'sync.now'; payload: Record<string, never> };
+  | { type: 'sync.now'; payload: Record<string, never> }
+  // 经验只能作废、恢复；改文字和新增只能在 Mac 上用 agentctl
+  | { type: 'lesson.void'; payload: { id: number } }
+  | { type: 'lesson.restore'; payload: { id: number } };
 
 /** 修改实例的参数 */
 export type UpdateInstancePayload = Extract<CommandInput, { type: 'instance.update' }>['payload'];
@@ -295,6 +341,11 @@ export function getRun(machineId: string, runId: string): Promise<IRunDetail> {
   );
 }
 
+/** 经验列表与各机器的上限 */
+export function getLessons(): Promise<ILessonList> {
+  return request<ILessonList>(HUB, '/v1/admin/agents/lessons');
+}
+
 /** 发指令 */
 export function sendCommand(machineId: string, input: CommandInput): Promise<ICommand> {
   return request<ICommand>(HUB, '/v1/admin/agents/commands', { method: 'POST', body: { machineId, ...input } });
@@ -345,8 +396,24 @@ export function verdictLabel(verdict: string | null): string {
       return '不修';
     case 'escalate':
       return '交给你';
+    case 'defer':
+      return '以后再做';
     default:
       return '未判';
+  }
+}
+
+/** 经验来源的中文 */
+export function lessonSourceLabel(source: string): string {
+  switch (source) {
+    case 'cleanup':
+      return '代码清理';
+    case 'review':
+      return 'review';
+    case 'manual':
+      return '手动';
+    default:
+      return source;
   }
 }
 

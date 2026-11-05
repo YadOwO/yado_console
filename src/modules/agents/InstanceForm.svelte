@@ -2,7 +2,7 @@
   /**
    * 新建或修改实例。
    *
-   * 新建：选机器、流程、仓库与开发分支、调度；新实例一律是演练模式，看过结果再改成推送。
+   * 新建：选机器、流程、仓库与开发分支、调度；换流程时按它的默认调度预填。新实例一律是演练模式，看过结果再改成推送。
    * 修改：只把改动过的字段发给 Mac。「允许推到会触发部署的分支」只能在 Mac 上改，这里不提供。
    */
   import { untrack } from 'svelte';
@@ -17,6 +17,9 @@
     type UpdateInstancePayload,
   } from './api';
   import { commandState, performCommand } from './command.svelte';
+
+  /** 流程没报默认调度时（旧版 agentd）用的：每天北京时间 18:00 */
+  const FALLBACK_SCHEDULE: Schedule = { kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai' };
 
   let {
     instance,
@@ -34,13 +37,17 @@
   // 表单只在打开时取一次初始值，之后总览刷新不会冲掉正在编辑的内容
   const initial = untrack(() => instance);
   const initialMachines = untrack(() => machines);
-  const initialSchedule: Schedule = initial?.schedule ?? { kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai' };
+  const initialMachine =
+    initialMachines.find((item) => item.id === initial?.machineId) ??
+    initialMachines.find((item) => item.isOnline) ??
+    initialMachines[0] ??
+    null;
+  const initialFlowType = initial?.flowType ?? initialMachine?.flows[0]?.type ?? 'review';
+  const initialSchedule: Schedule = initial?.schedule ?? flowDefaultSchedule(initialMachine, initialFlowType) ?? FALLBACK_SCHEDULE;
 
-  let machineId = $state(
-    initial?.machineId ?? initialMachines.find((item) => item.isOnline)?.id ?? initialMachines[0]?.id ?? '',
-  );
+  let machineId = $state(initial?.machineId ?? initialMachine?.id ?? '');
   const machine = $derived(machines.find((item) => item.id === machineId) ?? null);
-  let flowType = $state(initial?.flowType ?? initialMachines[0]?.flows[0]?.type ?? 'review');
+  let flowType = $state(initialFlowType);
   let repo = $state('YadOwO/');
   let branch = $state(initial?.branch ?? 'dev');
   let scheduleKind = $state<Schedule['kind']>(initialSchedule.kind);
@@ -57,6 +64,47 @@
     fixer: initial?.models.fixer ?? '',
   });
   let errorText = $state<string | null>(null);
+
+  /** 代码清理：每周挑改得多的文件做不改行为的重构，没有「review 到哪」 */
+  const isCleanup = $derived(flowType === 'cleanup');
+  /** 推送的是什么：review 推修复，代码清理推重构 */
+  const changeNoun = $derived(isCleanup ? '重构' : '修复');
+  /** 新建时的说明 */
+  const createHint = $derived(
+    isCleanup
+      ? '每周挑最近改得多的几个文件做不改行为的小重构。新实例是演练模式：只出报告不推送，看过结果再改成推送。'
+      : flowType === 'review'
+        ? '新实例是演练模式：只出报告不推送，看过结果再改成推送。从现在的最新提交开始 review。'
+        : '新实例是演练模式：只出报告不推送，看过结果再改成推送。',
+  );
+
+  /** 某台机器上某种流程的默认调度；旧版 agentd 没报时为 null */
+  function flowDefaultSchedule(target: IMachine | null, type: string): Schedule | null {
+    return target?.flows.find((flow) => flow.type === type)?.defaultSchedule ?? null;
+  }
+
+  /** 把调度填进表单 */
+  function fillSchedule(schedule: Schedule): void {
+    scheduleKind = schedule.kind;
+    if (schedule.kind === 'daily') {
+      time = schedule.time;
+      timezone = schedule.timezone;
+    } else if (schedule.kind === 'interval') {
+      minutes = schedule.minutes;
+    } else {
+      expression = schedule.expression;
+      timezone = schedule.timezone;
+    }
+  }
+
+  /** 换流程：有默认调度就按它预填，没有就保留表单里现在的 */
+  function selectFlow(type: string): void {
+    flowType = type;
+    const schedule = flowDefaultSchedule(machine, type);
+    if (schedule !== null) {
+      fillSchedule(schedule);
+    }
+  }
 
   /** 时区选项：北京时间、本机时区，以及实例当前用的时区 */
   const timezones = $derived(
@@ -87,7 +135,7 @@
       patch.schedule = schedule;
     }
     if (isDryRun !== current.isDryRun) {
-      if (!isDryRun && !confirm(`改成推送后，复审通过的修复会直接推到 ${branch.trim()}。确定吗？`)) {
+      if (!isDryRun && !confirm(`改成推送后，复审通过的${changeNoun}会直接推到 ${branch.trim()}。确定吗？`)) {
         return null;
       }
       patch.isDryRun = isDryRun;
@@ -165,7 +213,7 @@
     {/if}
     <label class="field">
       <span>流程</span>
-      <select bind:value={flowType}>
+      <select bind:value={() => flowType, selectFlow}>
         {#each machine?.flows ?? [] as flow (flow.type)}
           <option value={flow.type}>{flow.title}</option>
         {/each}
@@ -181,7 +229,7 @@
     <span>开发分支</span>
     <input bind:value={branch} autocomplete="off" spellcheck="false" />
   </label>
-  {#if initial !== null && branch.trim() !== initial.branch}
+  {#if initial !== null && flowType === 'review' && branch.trim() !== initial.branch}
     <p class="hint">换分支后从新分支的最新提交开始 review。</p>
   {/if}
 
@@ -210,9 +258,12 @@
       {/if}
     </div>
   </div>
+  {#if scheduleKind === 'cron'}
+    <p class="hint">cron 五段：分 时 日 月 周，例如 <span class="mono">0 4 * * 6</span> 是每周六 04:00。</p>
+  {/if}
 
   {#if initial === null}
-    <p class="hint">新实例是演练模式：只出报告不推送，看过结果再改成推送。从现在的最新提交开始 review。</p>
+    <p class="hint">{createHint}</p>
   {:else}
     <div class="field">
       <span>模式</span>
@@ -221,7 +272,7 @@
         <button type="button" aria-pressed={!isDryRun} onclick={() => (isDryRun = false)}>推送</button>
       </div>
     </div>
-    <p class="hint">演练只出报告；推送会把复审通过的修复直接推到开发分支。</p>
+    <p class="hint">演练只出报告；推送会把复审通过的{changeNoun}直接推到开发分支。</p>
     <label class="field">
       <span>最多几轮</span>
       <input class="narrow" type="number" min="1" max="5" bind:value={maxRounds} />

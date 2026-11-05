@@ -30,10 +30,11 @@
   /** 自动刷新间隔（运行没结束时） */
   const REFRESH_INTERVAL_MS = 5000;
 
-  /** 问题按主审的判断分组，交给你的排最前 */
+  /** 问题按主审的判断分组，交给你的排最前；「以后再做」只有代码清理会判 */
   const GROUPS: { verdict: string | null; title: string }[] = [
     { verdict: 'escalate', title: '交给你' },
     { verdict: 'fix', title: '修' },
+    { verdict: 'defer', title: '以后再做' },
     { verdict: 'wontfix', title: '不修' },
     { verdict: null, title: '还没判' },
   ];
@@ -76,6 +77,14 @@
     }
     parts.push(`${detail.rounds} 轮`);
     return parts.join(' · ');
+  }
+
+  /**
+   * 运行是否只基于一个提交、没有「提交范围」：代码清理（base 为 null，head 是开始时开发分支的最新提交），
+   * 以及交给主审的运行（base 为 null 或等于 head）
+   */
+  function isBasedOnHead(detail: IRunDetail): boolean {
+    return detail.delegatedFrom !== null || detail.baseCommit === null || detail.baseCommit === detail.headCommit;
   }
 
   /** 问题的位置 */
@@ -127,6 +136,8 @@
       {#if run.delegatedFrom !== null}
         <dt>来自</dt>
         <dd><a class="mono" href="/agents/runs/{machineId}/{run.delegatedFrom}">{run.delegatedFrom}</a> 里交给你的问题</dd>
+      {/if}
+      {#if isBasedOnHead(run)}
         <dt>基于提交</dt>
         <dd class="mono">{shortSha(run.headCommit)}</dd>
       {:else}
