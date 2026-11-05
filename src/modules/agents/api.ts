@@ -57,8 +57,10 @@ export interface IFinding {
   verdict: string | null;
   reason: string | null;
   fixCommit: string | null;
-  /** 交给你的问题的处理结果：wontfix、done */
+  /** 交给你的问题的处理结果：wontfix 不修、done 已处理、delegated 交给主审 */
   resolution: string | null;
+  /** 交给主审时，主审决定它的那次运行 */
+  delegatedRunId: string | null;
 }
 
 /** 运行摘要 */
@@ -82,6 +84,8 @@ interface IRunBase {
   startedAt: string | null;
   finishedAt: string | null;
   acknowledgedAt: string | null;
+  /** 交给主审的运行：那个问题所在的运行 */
+  delegatedFrom: string | null;
 }
 
 /** 运行列表里的一项 */
@@ -236,7 +240,7 @@ export type CommandInput =
         pausedFlows: string[];
       }>;
     }
-  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' } }
+  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate'; note?: string } }
   | { type: 'sync.now'; payload: Record<string, never> };
 
 /** 修改实例的参数 */
@@ -358,6 +362,18 @@ export function severityLabel(severity: string | null): string {
     default:
       return severity ?? '';
   }
+}
+
+/** 提交号取前 7 位 */
+/** 交给主审时补充信息的最大长度，与 hub、agentd 一致 */
+export const DELEGATE_NOTE_MAX = 1000;
+
+/** 触发方式的中文 */
+export function triggerLabel(trigger: string): string {
+  if (trigger === 'manual') {
+    return '手动';
+  }
+  return trigger === 'delegate' ? '交给主审' : '定时';
 }
 
 /** 提交号取前 7 位 */

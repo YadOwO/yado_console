@@ -18,6 +18,7 @@
     runStatusLabel,
     severityLabel,
     shortSha,
+    triggerLabel,
     verdictLabel,
     type IFinding,
     type IRunDetail,
@@ -68,7 +69,7 @@
 
   /** 标题下面的一行：触发方式、开始时间、耗时、轮数 */
   function metaText(detail: IRunDetail): string {
-    const parts = [detail.trigger === 'manual' ? '手动' : '定时', formatTime(detail.queuedAt)];
+    const parts = [triggerLabel(detail.trigger), formatTime(detail.queuedAt)];
     const duration = durationText(detail.startedAt, detail.finishedAt);
     if (duration !== '') {
       parts.push(duration);
@@ -123,8 +124,15 @@
     {/if}
 
     <dl class="facts">
-      <dt>提交范围</dt>
-      <dd class="mono">{shortSha(run.baseCommit)}..{shortSha(run.headCommit)}</dd>
+      {#if run.delegatedFrom !== null}
+        <dt>来自</dt>
+        <dd><a class="mono" href="/agents/runs/{machineId}/{run.delegatedFrom}">{run.delegatedFrom}</a> 里交给你的问题</dd>
+        <dt>基于提交</dt>
+        <dd class="mono">{shortSha(run.headCommit)}</dd>
+      {:else}
+        <dt>提交范围</dt>
+        <dd class="mono">{shortSha(run.baseCommit)}..{shortSha(run.headCommit)}</dd>
+      {/if}
       <dt>推送</dt>
       <dd class:mono={run.pushedCommit !== null}>{run.pushedCommit === null ? (run.isDryRun ? '演练不推送' : '没有推送') : shortSha(run.pushedCommit)}</dd>
       <dt>tokens</dt>
@@ -140,7 +148,9 @@
               <span class="mono muted">{finding.ref}</span>
               <span class="tag">{severityLabel(finding.severity)}</span>
               <span class="title">{finding.title}</span>
-              {#if finding.resolution !== null}
+              {#if finding.resolution === 'delegated' && finding.delegatedRunId !== null}
+                <a class="status status-resolved" href="/agents/runs/{machineId}/{finding.delegatedRunId}">已交给主审 →</a>
+              {:else if finding.resolution !== null}
                 <span class="status status-resolved">{finding.resolution === 'wontfix' ? '你选了不修' : '已处理'}</span>
               {/if}
             </div>
@@ -261,6 +271,10 @@
 
   .facts dd {
     margin: 0;
+  }
+
+  .facts a {
+    text-decoration: underline;
   }
 
   .list {
