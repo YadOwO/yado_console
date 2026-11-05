@@ -2,7 +2,7 @@
  * Agent 管理接口：yado_hub `/v1/admin/agents/*`，结构以 yado_hub 的 openapi.json 为准。
  *
  * 流程跑在 Mac 上的 agentd 里，hub 只存它同步上来的摘要。页面上的操作都是「发指令」：
- * hub 存下指令，agentd 下次来问时（每分钟一次）取走执行并回报结果，页面轮询指令状态。
+ * hub 存下指令并立即唤醒 agentd 挂着的长轮询，agentd 取走执行并回报结果，页面轮询指令状态。
  */
 import { HUB } from '../../lib/hub';
 import { request } from '../../lib/http';
@@ -216,7 +216,7 @@ export interface ILessonList {
 export interface IMachine {
   id: string;
   agentdVersion: string;
-  /** 最近 30 秒内同步过 */
+  /** 最近 3 分钟内联系过 hub（领指令或同步） */
   isOnline: boolean;
   lastSeenAt: string;
   health: { status: 'ok' | 'degraded'; detail: string; activeRuns: number; queuedRuns: number } | null;

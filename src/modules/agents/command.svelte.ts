@@ -1,7 +1,9 @@
 /**
  * 发指令并等 Mac 回报结果。
  *
- * agentd 每分钟来问一次有没有指令，正常一分钟左右有结果；新建实例要 clone 仓库，还要再多几十秒。
+ * agentd 用长轮询等指令，指令发出后通常一秒内就被取走，简单的操作几秒内有结果；新建实例要 clone 仓库，还要再多几十秒。
+ * 进度只分三段（hub 的指令状态就是 pending → sent → 终态，agentd 不回报「开始执行」）：
+ * 已发出等 Mac 取走（pending）、Mac 已取走正在执行（sent）、完成 / 失败 / 作废。
  * 页面底部的提示条（CommandToast）显示最近一条指令的进度；执行期间禁用各操作按钮，避免连点发出重复指令。
  */
 import { errorMessage } from '../../lib/http';
@@ -13,8 +15,11 @@ const POLL_INTERVAL_MS = 1500;
 /** 最多等多久；超过后不再轮询，提示稍后刷新 */
 const POLL_TIMEOUT_MS = 180_000;
 
-/** 等多久还没被取走就提示 Mac 可能离线（Mac 每分钟来问一次，留点余量） */
-const OFFLINE_HINT_MS = 90_000;
+/**
+ * 等多久还没被取走就提示 Mac 可能离线。长轮询下正常情况一秒内就会被取走，15 秒还是 pending 基本说明 Mac 不在线。
+ * 旧版 agentd（每分钟问一次）会因此误报「可能离线」，只是提示文案；升级 agentd 即可。
+ */
+const OFFLINE_HINT_MS = 15_000;
 
 /** 成功的提示显示多久 */
 const OK_NOTICE_MS = 6000;
@@ -45,7 +50,7 @@ async function waitForResult(command: ICommand, label: string): Promise<ICommand
       return current;
     }
     if (current.status === 'sent') {
-      commandState.notice = { text: `${label}：Mac 正在执行…`, tone: 'info' };
+      commandState.notice = { text: `${label}：Mac 已取走，正在执行…`, tone: 'info' };
     } else if (Date.now() - startedAt > OFFLINE_HINT_MS) {
       commandState.notice = { text: `${label}：Mac 还没取走指令，可能离线；10 分钟内上线仍会执行`, tone: 'info' };
     }
@@ -64,7 +69,7 @@ async function waitForResult(command: ICommand, label: string): Promise<ICommand
 export async function performCommand(machineId: string, input: CommandInput, label: string): Promise<boolean> {
   commandSequence += 1;
   commandState.isBusy = true;
-  commandState.notice = { text: `${label}：已发出，Mac 每分钟来取一次指令，稍等…`, tone: 'info' };
+  commandState.notice = { text: `${label}：已发出，等待 Mac 取走…`, tone: 'info' };
   try {
     const result = await waitForResult(await sendCommand(machineId, input), label);
     if (result === null) {
