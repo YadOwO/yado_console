@@ -56,3 +56,4 @@ src/app.css                 全局颜色、字体与通用控件样式
 
 - 改完至少执行 `pnpm run check` 与 `pnpm run build`。
 - 改了页面后在本地实际打开看一遍，包括浅色、深色和手机宽度，见 README「本地开发」。
+- 改动上线时需要额外操作的（加环境变量、改 nginx、执行 SQL 等），一条一行写进 `deploy/pending.md`，发布流程会照着做，做完挪进 `deploy/releases/`。
