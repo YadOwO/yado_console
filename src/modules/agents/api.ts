@@ -47,7 +47,9 @@ export type RunStatus =
   | 'needs_attention'
   | 'failed'
   | 'canceled'
-  | 'interrupted';
+  | 'interrupted'
+  // 发布：计划写好了或遇到计划外的事，等你同意或拒绝
+  | 'waiting';
 
 /** 运行的一步 */
 export interface IStep {
@@ -177,6 +179,10 @@ export interface IInboxItem {
   severity: string | null;
   location: string | null;
   runStatus: RunStatus | null;
+  /** 等你点头的种类：plan 发布计划、confirm 计划外要你确认的事；别的待办为 null */
+  approvalKind: 'plan' | 'confirm' | null;
+  /** 等你点头时要你看的全文（Mac 上已打码）；别的待办为 null */
+  approvalText: string | null;
   createdAt: string;
 }
 
@@ -383,7 +389,7 @@ export type CommandInput =
         pausedFlows: string[];
       }>;
     }
-  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate'; note?: string } }
+  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate' | 'approve' | 'reject'; note?: string } }
   | { type: 'sync.now'; payload: Record<string, never> }
   // 经验只能作废、恢复；改文字和新增只能在 Mac 上用 agentctl
   | { type: 'lesson.void'; payload: { id: number } }
@@ -476,6 +482,7 @@ const RUN_STATUS = new Map<string, { label: string; tone: string }>([
   ['failed', { label: '失败', tone: 'danger' }],
   ['canceled', { label: '已取消', tone: 'neutral' }],
   ['interrupted', { label: '被中断', tone: 'danger' }],
+  ['waiting', { label: '等你点头', tone: 'pending' }],
 ]);
 
 /** 运行状态的中文与配色；不认识的状态原样显示 */
@@ -547,6 +554,9 @@ export function severityLabel(severity: string | null): string {
 /** 提交号取前 7 位 */
 /** 交给主审时补充信息的最大长度，与 hub、agentd 一致 */
 export const DELEGATE_NOTE_MAX = 1000;
+
+/** 同意或拒绝等你点头的运行时备注的最大长度，与 hub、agentd 一致 */
+export const APPROVAL_NOTE_MAX = 1000;
 
 /** 触发方式的中文 */
 export function triggerLabel(trigger: string): string {

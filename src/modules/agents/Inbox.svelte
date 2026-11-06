@@ -5,6 +5,7 @@
    * 问题可以选「不修」（加进不修清单，以后同样的问题不再提）、「已处理」（你自己改了或决定不管），
    * 或「交给主审」：Mac 上另开一次运行，主审看最新代码在修和不修里选一个，可以先补充一段信息给它。
    * 运行只能「知道了」。
+   * 等你点头的运行（发布计划待确认、发布要你确认）：看全文，同意或拒绝，可以写备注；页面不能改计划和命令。
    * 处理都是发指令给 Mac，成功后从列表里消失。
    */
   import { onMount } from 'svelte';
@@ -12,7 +13,7 @@
   import { refreshAdminStatus } from '../../lib/admin-status.svelte';
   import { formatFullTime, formatTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
-  import { DELEGATE_NOTE_MAX, getOverview, runStatusClass, runStatusLabel, severityLabel, type IInboxItem } from './api';
+  import { APPROVAL_NOTE_MAX, DELEGATE_NOTE_MAX, getOverview, runStatusClass, runStatusLabel, severityLabel, type IInboxItem } from './api';
   import AgentTabs from './AgentTabs.svelte';
   import { commandState, performCommand } from './command.svelte';
 
@@ -23,6 +24,43 @@
   const DELEGATE_HINT =
     '主审会看最新代码，在修和不修里选一个，不会再交回给你。选了修就照常修复、复审，推不推送跟实例的模式走（演练模式不推送）；' +
     '选了不修就加进不修清单。结果在运行记录里看。';
+
+  /** 同意或拒绝后会怎样：按等你点头的种类和决定 */
+  function decideHint(item: IInboxItem, decision: 'approve' | 'reject'): string {
+    if (item.approvalKind === 'plan') {
+      return decision === 'approve'
+        ? 'Mac 上接着发：先确认 main 没动过，再按计划做服务器准备、快进 main、等部署跑完、检查线上。出问题就停下来再找你。'
+        : '这次发布取消，什么都不做。备注会留在运行记录里。';
+    }
+    return decision === 'approve'
+      ? '主审照上面写的去做，做完接着发。'
+      : '主审不做这件事，接着怎么走看运行记录。';
+  }
+
+  /** 正在决定同意还是拒绝的待办，和选的决定 */
+  let decidingId = $state<string | null>(null);
+  let decision = $state<'approve' | 'reject'>('approve');
+
+  /** 打开同意或拒绝的确认 */
+  function openDecide(item: IInboxItem, value: 'approve' | 'reject'): void {
+    delegatingId = null;
+    decidingId = item.id;
+    decision = value;
+    note = '';
+  }
+
+  /** 同意或拒绝：Mac 上接着跑或取消 */
+  async function decide(item: IInboxItem): Promise<void> {
+    const text = note.trim();
+    const payload: { itemId: string; action: 'approve' | 'reject'; note?: string } = { itemId: item.id, action: decision };
+    if (text !== '') {
+      payload.note = text;
+    }
+    if (await performCommand(item.machineId, { type: 'inbox.resolve', payload }, decision === 'approve' ? '同意' : '拒绝')) {
+      decidingId = null;
+      removeItem(item);
+    }
+  }
 
   /** 正在填写「交给主审」的待办 */
   let delegatingId = $state<string | null>(null);
@@ -62,6 +100,7 @@
 
   /** 打开「交给主审」的补充信息 */
   function openDelegate(item: IInboxItem): void {
+    decidingId = null;
     delegatingId = item.id;
     note = '';
   }
@@ -89,7 +128,7 @@
   <header class="page-header">
     <div class="page-title">
       <h1>Agent</h1>
-      <p class="page-sub">主审交给你的问题，和需要你看一下的运行</p>
+      <p class="page-sub">主审交给你的问题、等你点头的发布，和需要你看一下的运行</p>
     </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
@@ -108,13 +147,15 @@
       {#each items as item (`${item.machineId}/${item.id}`)}
         <li
           class="item"
-          class:tone-pending={item.kind === 'finding' || item.runStatus === 'needs_attention'}
+          class:tone-pending={item.kind === 'finding' || item.runStatus === 'needs_attention' || item.runStatus === 'waiting'}
           class:tone-danger={item.runStatus === 'failed' || item.runStatus === 'interrupted'}
         >
           <div class="meta">
             {#if item.kind === 'finding'}
               <span class="status status-pending">要你决定</span>
               {#if item.severity !== null}<span class="tag">{severityLabel(item.severity)}</span>{/if}
+            {:else if item.runStatus === 'waiting'}
+              <span class="status status-pending">等你点头</span>
             {:else if item.runStatus !== null}
               <span class={runStatusClass(item.runStatus)}>运行{runStatusLabel(item.runStatus)}</span>
             {/if}
@@ -124,7 +165,34 @@
           <p class="title">{item.title}</p>
           {#if item.location !== null}<p class="mono muted location">{item.location}</p>{/if}
           {#if item.detail !== null}<p class="detail">{item.detail}</p>{/if}
-          {#if delegatingId === item.id}
+          {#if item.approvalText !== null}
+            <details class="approval" open>
+              <summary>{item.approvalKind === 'plan' ? '发布计划全文' : '要你确认的事'}</summary>
+              <pre class="mono">{item.approvalText}</pre>
+            </details>
+          {/if}
+          {#if decidingId === item.id}
+            <div class="delegate">
+              <p class="muted hint">{decideHint(item, decision)}</p>
+              <textarea
+                bind:value={note}
+                rows="2"
+                maxlength={APPROVAL_NOTE_MAX}
+                placeholder={decision === 'approve' ? '备注（可选）：比如先发哪个' : '备注（可选）：为什么不发'}
+                aria-label="同意或拒绝的备注"
+              ></textarea>
+              <div class="actions">
+                <button class="btn" type="button" onclick={() => (decidingId = null)}>取消</button>
+                <button
+                  class="btn"
+                  class:btn-primary={decision === 'approve'}
+                  type="button"
+                  disabled={commandState.isBusy}
+                  onclick={() => void decide(item)}>{decision === 'approve' ? '确定同意' : '确定拒绝'}</button
+                >
+              </div>
+            </div>
+          {:else if delegatingId === item.id}
             <div class="delegate">
               <p class="muted hint">{DELEGATE_HINT}</p>
               <textarea
@@ -164,6 +232,13 @@
                   title="你已经处理了，或者决定不管"
                   disabled={commandState.isBusy}
                   onclick={() => void resolve(item, 'done')}>已处理</button
+                >
+              {:else if item.runStatus === 'waiting'}
+                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'reject')}
+                  >拒绝</button
+                >
+                <button class="btn btn-primary" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'approve')}
+                  >同意</button
                 >
               {:else}
                 <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void resolve(item, 'done')}
@@ -293,6 +368,25 @@
     border-radius: 8px;
     background: var(--surface-sunken);
     color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  .approval summary {
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .approval pre {
+    max-height: 60vh;
+    margin: 6px 0 0;
+    padding: 10px 12px;
+    overflow: auto;
+    border-radius: 8px;
+    background: var(--surface-sunken);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
 
