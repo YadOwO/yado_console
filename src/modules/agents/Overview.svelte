@@ -1,83 +1,114 @@
 <script lang="ts">
   /**
-   * Agent 总览：机器状态、今天的汇总、待办提醒、各流程实例（可新建、修改、暂停、立即运行、删除）、
-   * 最近运行与全局设置。
+   * Agent 总览：机器状态、待办提醒、各流程一张卡（实例数、下次运行、上次运行；点进去看实例、运行和流程自己的东西）、全局设置。
    *
-   * 页面可见时每 10 秒从 hub 刷新一次；表单打开时只刷新数据，不冲掉正在编辑的内容。
-   * hub 上的数据是 Mac 最近一次上传时的状态（有新动态时约 2～7 秒内，否则一小时一次），「立即同步」让 Mac 马上传一次。
+   * 页面可见时每 10 秒从 hub 刷新一次。hub 上的数据是 Mac 最近一次上传时的状态（有新动态时约 2～7 秒内，否则一小时一次），
+   * 「立即同步」让 Mac 马上传一次。
    */
   import { onMount } from 'svelte';
 
-  import { refreshAdminStatus } from '../../lib/admin-status.svelte';
+  import { adminStatus } from '../../lib/admin-status.svelte';
   import { formatFullTime, formatTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
   import {
     EXPLORE_FLOW,
     getOverview,
     IMPLEMENT_FLOW,
-    SERIES_FLOWS,
-    listRuns,
+    instanceLabel,
     runStatusClass,
     runStatusLabel,
-    shortSha,
+    SERIES_FLOWS,
+    type IFlow,
     type IInstance,
     type IMachine,
     type IOverview,
-    type IRunListItem,
   } from './api';
   import AgentTabs from './AgentTabs.svelte';
   import { commandState, performCommand } from './command.svelte';
-  import InstanceForm from './InstanceForm.svelte';
-  import RunItems from './RunItems.svelte';
   import SettingsForm from './SettingsForm.svelte';
 
   /** 自动刷新间隔 */
   const REFRESH_INTERVAL_MS = 10_000;
 
+  /** 一张流程卡 */
+  interface IFlowCard {
+    flow: IFlow;
+    instances: IInstance[];
+    /** 启用中的实例里最早的下次运行 */
+    nextRunAt: string | null;
+    /** 全部实例里最近的一次运行 */
+    last: { instance: IInstance; run: NonNullable<IInstance['lastRun']> } | null;
+    /** 卡头的模式标记：推送 / 演练 / 推新分支 / 只出想法 */
+    badge: { label: string; tone: string } | null;
+  }
+
   let overview = $state<IOverview | null>(null);
-  let recentRuns = $state<IRunListItem[]>([]);
   let isLoading = $state(true);
   let errorText = $state<string | null>(null);
-  /** 正在修改的实例 ID */
-  let editingId = $state<string | null>(null);
-  let isCreating = $state(false);
 
   const machines = $derived(overview?.machines ?? []);
-  const today = $derived(overview?.today ?? null);
-  const runCount = $derived(Object.values(today?.runs ?? {}).reduce((sum, count) => sum + count, 0));
+  /** 产品探索还没处理的想法数 */
+  const ideaCount = $derived(adminStatus.value?.agentIdeaCount ?? 0);
+  const cards = $derived(overview === null ? [] : buildCards(overview));
 
-  /** 加载总览与最近运行；isSilent 时不显示加载中 */
+  /** 卡头的模式标记 */
+  function badgeOf(flow: IFlow, instances: IInstance[]): IFlowCard['badge'] {
+    if (flow.type === IMPLEMENT_FLOW) {
+      return { label: '推新分支', tone: 'resolved' };
+    }
+    if (flow.type === EXPLORE_FLOW) {
+      return { label: '只出想法', tone: 'info' };
+    }
+    const enabled = instances.filter((item) => item.isEnabled);
+    if (enabled.length === 0) {
+      return null;
+    }
+    return enabled.some((item) => !item.isDryRun) ? { label: '推送', tone: 'resolved' } : { label: '演练', tone: 'info' };
+  }
+
+  /** 按机器报上来的流程类型（保持 agentd 的顺序）汇总各自的实例 */
+  function buildCards(data: IOverview): IFlowCard[] {
+    const flows = new Map<string, IFlow>();
+    for (const machine of data.machines) {
+      for (const flow of machine.flows) {
+        const known = flows.get(flow.type);
+        if (known === undefined) {
+          flows.set(flow.type, flow);
+        } else if (flow.isPaused && !known.isPaused) {
+          flows.set(flow.type, { ...known, isPaused: true });
+        }
+      }
+    }
+    return [...flows.values()].map((flow) => {
+      const instances = data.instances.filter((item) => item.flowType === flow.type);
+      const nextRuns = instances.flatMap((item) => (item.isEnabled && item.nextRunAt !== null ? [item.nextRunAt] : [])).sort();
+      let last: IFlowCard['last'] = null;
+      for (const instance of instances) {
+        if (instance.lastRun !== null && (last === null || instance.lastRun.queuedAt > last.run.queuedAt)) {
+          last = { instance, run: instance.lastRun };
+        }
+      }
+      return { flow, instances, nextRunAt: nextRuns[0] ?? null, last, badge: badgeOf(flow, instances) };
+    });
+  }
+
+  /** 暂停了的实例数 */
+  function pausedCount(card: IFlowCard): number {
+    return card.instances.filter((item) => !item.isEnabled).length;
+  }
+
+  /** 加载总览；isSilent 时不显示加载中 */
   async function load(isSilent = false): Promise<void> {
     if (!isSilent) {
       isLoading = true;
     }
     try {
-      // 依次请求：两个都很轻，没必要并发
       overview = await getOverview();
-      recentRuns = (await listRuns({ limit: 8 })).runs;
       errorText = null;
     } catch (error) {
       errorText = errorMessage(error);
     } finally {
       isLoading = false;
-    }
-  }
-
-  /** 指令成功后刷新页面与侧栏角标 */
-  async function afterCommand(): Promise<void> {
-    await load(true);
-    refreshAdminStatus().catch(() => undefined);
-  }
-
-  /** 流程类型的中文名 */
-  function flowTitle(instance: IInstance): string {
-    return machines.find((item) => item.id === instance.machineId)?.flows.find((flow) => flow.type === instance.flowType)?.title ?? instance.flowType;
-  }
-
-  /** 发一条针对实例的指令，成功后刷新 */
-  async function act(instance: IInstance, input: Parameters<typeof performCommand>[1], label: string): Promise<void> {
-    if (await performCommand(instance.machineId, input, `${label} ${instance.repo}`)) {
-      await afterCommand();
     }
   }
 
@@ -89,15 +120,7 @@
   /** 让 Mac 马上把最新状态传上来 */
   async function syncNow(machine: IMachine): Promise<void> {
     if (await performCommand(machine.id, { type: 'sync.now', payload: {} }, '立即同步')) {
-      await afterCommand();
-    }
-  }
-
-  /** 删除实例，先确认 */
-  function remove(instance: IInstance): void {
-    const where = SERIES_FLOWS.has(instance.flowType) ? instance.repo : `${instance.repo}（${instance.branch}）`;
-    if (confirm(`删除 ${where} 的${flowTitle(instance)}？运行记录会保留，不修清单会清空。`)) {
-      void act(instance, { type: 'instance.delete', payload: { id: instance.id } }, '删除');
+      await load(true);
     }
   }
 
@@ -116,7 +139,7 @@
   <header class="page-header">
     <div class="page-title">
       <h1>Agent</h1>
-      <p class="page-sub">Mac 上的自动 review、修复、清理与产品探索</p>
+      <p class="page-sub">Mac 上的自动 review、清理、产品探索与一次实现</p>
     </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
@@ -149,20 +172,6 @@
       </div>
     {/each}
 
-    {#if today !== null}
-      <div class="stats" aria-label="今天">
-        <div class="stats-head"><h2>今天</h2></div>
-        <div class="stats-grid">
-          <div><strong>{runCount}</strong><span>今天运行</span></div>
-          <div><strong class="tone-resolved">{today.findings.fixed}</strong><span>修复</span></div>
-          <div><strong class="tone-muted">{today.findings.wontfix}</strong><span>不修</span></div>
-          <div><strong class="tone-pending">{today.findings.escalated}</strong><span>交给你</span></div>
-          <div><strong>{today.pushed}</strong><span>推送</span></div>
-          <div><strong class="tone-muted">{today.noChangeChecks}</strong><span>没新提交</span></div>
-        </div>
-      </div>
-    {/if}
-
     {#if overview.inbox.length > 0}
       <a class="inbox-banner" href="/agents/inbox">
         <span class="inbox-count">{overview.inbox.length}</span>
@@ -174,149 +183,59 @@
       </a>
     {/if}
 
-    <div class="section-header">
-      <div class="section-title">
-        <h2>流程实例</h2>
-        <span class="section-count">{overview.instances.length}</span>
-      </div>
-      <button
-        class="btn"
-        type="button"
-        onclick={() => {
-          isCreating = true;
-          editingId = null;
-        }}
-        disabled={isCreating || machines.length === 0}>新建</button
-      >
-    </div>
-    {#if isCreating}
-      <InstanceForm
-        instance={null}
-        {machines}
-        onClose={() => (isCreating = false)}
-        onSaved={() => {
-          isCreating = false;
-          void afterCommand();
-        }}
-      />
-    {/if}
-    {#if overview.instances.length === 0 && !isCreating}
-      <p class="empty">还没有实例。点「新建」选一个仓库开始。</p>
-    {:else}
-      <ul class="instances">
-        {#each overview.instances as instance (`${instance.machineId}/${instance.id}`)}
-          <li
-            class="instance"
-            class:paused={!instance.isEnabled}
-            class:live={instance.isEnabled && !instance.isDryRun}
-            class:dry={instance.isEnabled && instance.isDryRun}
-          >
-            <div class="instance-head">
-              <span class="repo">{instance.repo}</span>
-              {#if !SERIES_FLOWS.has(instance.flowType)}<span class="tag">{instance.branch}</span>{/if}
-              <span class="tag">{flowTitle(instance)}</span>
-              <span class="instance-state">
-                {#if !instance.isEnabled}<span class="status status-neutral">已暂停</span>{/if}
-                {#if instance.flowType === IMPLEMENT_FLOW}
-                  <span class="status status-resolved">推新分支</span>
-                {:else if instance.flowType === EXPLORE_FLOW}
-                  <span class="status status-info">只出想法</span>
-                {:else}
-                  <span class="status {instance.isDryRun ? 'status-info' : 'status-resolved'}">{instance.isDryRun ? '演练' : '推送'}</span>
-                {/if}
-              </span>
-            </div>
-            <p class="instance-meta muted">
-              {instance.scheduleText}
-              {#if instance.isEnabled && instance.nextRunAt !== null}
-                · 下次 <time datetime={instance.nextRunAt} title={formatFullTime(instance.nextRunAt)}>{formatTime(instance.nextRunAt)}</time>
-              {/if}
-              {#if instance.flowType === EXPLORE_FLOW}
-                {#if instance.ideaLimit !== null}· 每个产品最多 {instance.ideaLimit} 条想法{/if}
-                {#if instance.isWebEnabled === true}· 可以上网{/if}
-              {:else if instance.flowType !== IMPLEMENT_FLOW}· 最多 {instance.maxRounds} 轮{/if}
-              <!-- 代码清理没有「review 到哪」，cursor 恒为 null -->
-              {#if instance.cursor !== null && instance.flowType !== 'cleanup'}
-                · review 到 <span class="mono">{shortSha(instance.cursor)}</span>
-              {/if}
-            </p>
-            {#if instance.lastRun !== null}
-              <a
-                class="last-run"
-                href="/agents/runs/{instance.machineId}/{instance.lastRun.id}"
-                title={instance.lastRun.reason ?? instance.lastRun.summary ?? undefined}
-              >
-                <span class={runStatusClass(instance.lastRun.status)}>{runStatusLabel(instance.lastRun.status)}</span>
-                <span class="muted last-time">{formatTime(instance.lastRun.queuedAt)}</span>
-                <span class="last-summary">{instance.lastRun.reason ?? instance.lastRun.summary ?? ''}</span>
-              </a>
-            {/if}
-            <div class="actions">
-              <!-- 一次实现每次都要带上需求，只能在 Mac 上用 agentctl implement 提 -->
-              {#if instance.flowType !== IMPLEMENT_FLOW}
-                <button
-                  class="btn"
-                  type="button"
-                  disabled={commandState.isBusy}
-                  onclick={() => void act(instance, { type: 'instance.run', payload: { id: instance.id } }, '立即运行')}
-                >
-                  立即运行
-                </button>
-              {/if}
-              <button
-                class="btn"
-                type="button"
-                disabled={commandState.isBusy}
-                onclick={() =>
-                  void act(
-                    instance,
-                    { type: 'instance.update', payload: { id: instance.id, isEnabled: !instance.isEnabled } },
-                    instance.isEnabled ? '暂停' : '恢复',
-                  )}
-              >
-                {instance.isEnabled ? '暂停' : '恢复'}
-              </button>
-              <button
-                class="btn"
-                type="button"
-                onclick={() => {
-                  editingId = editingId === instance.id ? null : instance.id;
-                  isCreating = false;
-                }}
-              >
-                {editingId === instance.id ? '收起' : '设置'}
-              </button>
-              <button class="btn danger" type="button" disabled={commandState.isBusy} onclick={() => remove(instance)}>删除</button>
-            </div>
-            {#if editingId === instance.id}
-              <InstanceForm
-                {instance}
-                {machines}
-                onClose={() => (editingId = null)}
-                onSaved={() => {
-                  editingId = null;
-                  void afterCommand();
-                }}
-              />
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-
-    {#if recentRuns.length > 0}
+    {#if cards.length > 0}
       <div class="section-header">
-        <h2>最近运行</h2>
-        <a class="link" href="/agents/runs">全部 →</a>
+        <h2>流程</h2>
       </div>
-      <RunItems runs={recentRuns} />
+      <div class="flows">
+        {#each cards as card (card.flow.type)}
+          <a class="flow" class:paused={card.flow.isPaused} href="/agents/flows/{card.flow.type}">
+            <div class="flow-head">
+              <h2>{card.flow.title}</h2>
+              {#if card.flow.isPaused}<span class="status status-neutral">已暂停</span>{/if}
+              {#if card.badge !== null}<span class="status status-{card.badge.tone}">{card.badge.label}</span>{/if}
+              <span class="arrow" aria-hidden="true">→</span>
+            </div>
+            <p class="flow-desc">{card.flow.description}</p>
+            <div class="flow-facts">
+              {#if card.flow.type === IMPLEMENT_FLOW}
+                <span>只手动：在 Mac 上用 <span class="mono">/yado-implement</span> 提需求</span>
+              {:else}
+                {#if card.flow.type === EXPLORE_FLOW}
+                  {#if ideaCount > 0}
+                    <span class="attention">{ideaCount} 条想法等你看</span>
+                  {:else if card.instances.length > 0}
+                    <span class="muted">没有待看的想法</span>
+                  {/if}
+                {:else if card.instances.length > 0}
+                  <span><b>{card.instances.length}</b> 个仓库{pausedCount(card) > 0 ? `，${pausedCount(card)} 个暂停` : ''}</span>
+                {/if}
+                {#if card.instances.length === 0}
+                  <span class="muted">{SERIES_FLOWS.has(card.flow.type) ? '还没有实例' : '还没有仓库'}</span>
+                {:else if card.nextRunAt !== null}
+                  <span>下次 <b><time datetime={card.nextRunAt} title={formatFullTime(card.nextRunAt)}>{formatTime(card.nextRunAt)}</time></b></span>
+                {/if}
+              {/if}
+            </div>
+            {#if card.last !== null}
+              <div class="flow-last" title={card.last.run.reason ?? card.last.run.summary ?? undefined}>
+                <span class={runStatusClass(card.last.run.status)}>{runStatusLabel(card.last.run.status)}</span>
+                <span class="muted last-time">
+                  {#if !SERIES_FLOWS.has(card.flow.type)}{instanceLabel(card.last.instance)} · {/if}{formatTime(card.last.run.queuedAt)}
+                </span>
+                <span class="flow-summary">{card.last.run.reason ?? card.last.run.summary ?? ''}</span>
+              </div>
+            {/if}
+          </a>
+        {/each}
+      </div>
     {/if}
 
     {#each machines as machine (machine.id)}
       {#if machine.settings !== null}
         <details class="settings">
           <summary>全局设置{machines.length > 1 ? `（${machine.id}）` : ''}</summary>
-          <SettingsForm {machine} settings={machine.settings} onSaved={() => void afterCommand()} />
+          <SettingsForm {machine} settings={machine.settings} onSaved={() => void load(true)} />
         </details>
       {/if}
     {/each}
@@ -360,12 +279,6 @@
     margin-top: 4px;
   }
 
-  .section-title {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
-
   h1 {
     font-size: 22px;
     font-weight: 600;
@@ -375,16 +288,6 @@
   h2 {
     font-size: 15px;
     font-weight: 600;
-  }
-
-  .section-count {
-    padding: 0 8px;
-    border-radius: 999px;
-    background: var(--chip-bg);
-    color: var(--muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    line-height: 20px;
   }
 
   .machine {
@@ -443,59 +346,6 @@
     box-shadow: 0 0 0 3px var(--resolved-bg);
   }
 
-  .stats {
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .stats-head {
-    padding: 12px 16px 0;
-  }
-
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    padding: 6px 0 12px;
-  }
-
-  .stats-grid div {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 6px 4px;
-  }
-
-  .stats-grid div + div {
-    border-left: 1px solid var(--line);
-  }
-
-  .stats-grid strong {
-    font-size: 22px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
-    line-height: 1.3;
-  }
-
-  .stats-grid span {
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .tone-resolved {
-    color: var(--resolved);
-  }
-
-  .tone-pending {
-    color: var(--pending);
-  }
-
-  .tone-muted {
-    color: var(--muted);
-  }
-
   .inbox-banner {
     display: flex;
     align-items: center;
@@ -547,22 +397,19 @@
     transform: translateX(3px);
   }
 
-  .instances {
+  /* 流程卡：两列，手机上一列 */
+  .flows {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .flow {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .instance {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 16px 12px 20px;
-    overflow: hidden;
+    min-width: 0;
+    padding: 16px;
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background: var(--surface);
@@ -570,119 +417,89 @@
     transition: border-color 0.15s, box-shadow 0.15s;
   }
 
-  .instance:hover {
+  .flow:hover {
     border-color: var(--line-strong);
     box-shadow: var(--shadow-md);
   }
 
-  /* 左侧色条：绿=推送、蓝=演练、灰=暂停，扫一眼就知道实例现在怎么跑 */
-  .instance::before {
-    position: absolute;
-    top: 14px;
-    bottom: 14px;
-    left: 0;
-    width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: transparent;
-    content: '';
+  .flow.paused {
+    opacity: 0.7;
   }
 
-  .instance.live::before {
-    background: var(--resolved);
-  }
-
-  .instance.dry::before {
-    background: var(--info);
-  }
-
-  .instance.paused::before {
-    background: var(--line-strong);
-  }
-
-  .instance-head {
+  .flow-head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
   }
 
-  .repo {
-    font-size: 15px;
-    font-weight: 600;
-    overflow-wrap: anywhere;
+  .flow-head h2 {
+    font-size: 16px;
   }
 
-  .instance-state {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+  .arrow {
     margin-left: auto;
+    color: var(--muted);
+    transition: transform 0.15s;
   }
 
-  .instance-meta {
+  .flow:hover .arrow {
+    transform: translateX(3px);
+  }
+
+  /* 说明最多两行，长的截掉 */
+  .flow-desc {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--muted);
     font-size: 13px;
     overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 
-  .instance-meta time,
-  .instance-meta .mono {
-    white-space: nowrap;
+  .flow-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    font-size: 13px;
   }
 
-  .last-run {
+  .flow-facts b {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .attention {
+    color: var(--pending);
+    font-weight: 500;
+  }
+
+  .flow-last {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
-    padding: 7px 10px;
-    border-radius: 8px;
-    background: var(--surface-sunken);
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
   }
 
   .last-time {
+    flex-shrink: 0;
     font-size: 12px;
     white-space: nowrap;
   }
 
-  .last-summary {
+  .flow-summary {
     flex: 1;
     min-width: 0;
     overflow: hidden;
+    color: var(--muted);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .last-run:hover .last-summary {
-    text-decoration: underline;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
-  }
-
-  .actions .btn {
-    height: 30px;
-    padding: 0 10px;
-    font-size: 13px;
-  }
-
-  .btn.danger {
-    color: var(--danger);
-  }
-
-  .btn.danger:hover:not(:disabled) {
-    border-color: var(--danger);
-  }
-
-  .link {
-    color: var(--muted);
-    font-size: 13px;
-    text-decoration: underline;
   }
 
   .settings {
@@ -723,39 +540,8 @@
       padding: 16px 16px 80px;
     }
 
-    .stats-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .stats-grid div:nth-child(4) {
-      border-left: 0;
-    }
-
-    .stats-grid div:nth-child(n + 4) {
-      border-top: 1px solid var(--line);
-    }
-
-    .instance-state {
-      margin-left: 0;
-    }
-
-    .actions {
-      justify-content: flex-start;
-    }
-
-    /* 手机上给上次运行的结论两行位置，不挤在一行截断 */
-    .last-run {
-      flex-wrap: wrap;
-    }
-
-    .last-summary {
-      display: -webkit-box;
-      flex-basis: 100%;
-      overflow: hidden;
-      white-space: normal;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
-      line-clamp: 2;
+    .flows {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>

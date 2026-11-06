@@ -1,16 +1,15 @@
 <script lang="ts">
   /**
-   * Agent 各页面顶部的标签（总览 / 待办 / 想法 / 运行记录 / 经验），以及底部的指令进度提示条。
+   * Agent 全局页面顶部的标签（总览 / 待办 / 运行记录 / 经验），以及底部的指令进度提示条。
+   * 各流程自己的东西（实例、想法、产品偏好）在流程页里，从总览的流程卡进。
    */
   import { adminStatus } from '../../lib/admin-status.svelte';
-  import { commandState, dismissNotice } from './command.svelte';
+  import CommandToast from './CommandToast.svelte';
 
   /** 当前所在的标签 */
-  let { active }: { active: 'overview' | 'inbox' | 'ideas' | 'runs' | 'lessons' } = $props();
+  let { active }: { active: 'overview' | 'inbox' | 'runs' | 'lessons' } = $props();
 
   const inboxCount = $derived(adminStatus.value?.agentInboxCount ?? 0);
-  /** 产品探索还没处理的想法数 */
-  const ideaCount = $derived(adminStatus.value?.agentIdeaCount ?? 0);
 </script>
 
 <nav class="tabs" aria-label="Agent">
@@ -18,19 +17,11 @@
   <a href="/agents/inbox" aria-current={active === 'inbox' ? 'page' : undefined}>
     待办{#if inboxCount > 0}<span class="count">{inboxCount}</span>{/if}
   </a>
-  <a href="/agents/ideas" aria-current={active === 'ideas' ? 'page' : undefined}>
-    想法{#if ideaCount > 0}<span class="count count-muted">{ideaCount}</span>{/if}
-  </a>
   <a href="/agents/runs" aria-current={active === 'runs' ? 'page' : undefined}>运行记录</a>
   <a href="/agents/lessons" aria-current={active === 'lessons' ? 'page' : undefined}>经验</a>
 </nav>
 
-{#if commandState.notice !== null}
-  <div class="toast toast-{commandState.notice.tone}" role="status">
-    <span>{commandState.notice.text}</span>
-    <button type="button" aria-label="关闭" onclick={dismissNotice}>×</button>
-  </div>
-{/if}
+<CommandToast />
 
 <style>
   .tabs {
@@ -83,51 +74,5 @@
     font-variant-numeric: tabular-nums;
     line-height: 18px;
     text-align: center;
-  }
-
-  /* 想法不算待办，角标用灰色，不催 */
-  .count-muted {
-    background: var(--chip-bg);
-    color: var(--muted);
-  }
-
-  .toast {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    left: 16px;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    max-width: 560px;
-    margin: 0 auto;
-    padding: 10px 12px 10px 16px;
-    border: 1px solid var(--field-border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: var(--shadow-md);
-  }
-
-  .toast span {
-    flex: 1;
-    overflow-wrap: anywhere;
-  }
-
-  .toast-ok span {
-    color: var(--resolved);
-  }
-
-  .toast-error span {
-    color: var(--danger);
-  }
-
-  .toast button {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
   }
 </style>

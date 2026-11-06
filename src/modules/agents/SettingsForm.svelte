@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * 一台机器的全局设置：同时最多跑几个、各角色默认模型、运行材料保留天数、暂停某类流程。
+   * 一台机器的全局设置：同时最多跑几个、各角色默认模型、运行材料保留天数。
    *
-   * 只把改动过的字段发给 Mac。检查命令、可推送的分支等安全相关的配置只能在 Mac 上改。
+   * 只把改动过的字段发给 Mac。暂停整个流程在各流程页上做；检查命令、可推送的分支等安全相关的配置只能在 Mac 上改。
    */
   import { untrack } from 'svelte';
 
@@ -17,12 +17,6 @@
   let maxConcurrentRuns = $state(initial.maxConcurrentRuns);
   let retentionDays = $state(initial.retentionDays);
   let models = $state<Record<Role, string>>({ ...initial.models });
-  let pausedFlows = $state<string[]>([...initial.pausedFlows]);
-
-  /** 切换某类流程的暂停 */
-  function togglePaused(type: string, isPaused: boolean): void {
-    pausedFlows = isPaused ? [...pausedFlows, type] : pausedFlows.filter((item) => item !== type);
-  }
 
   /** 提交改动过的字段 */
   async function submit(event: SubmitEvent): Promise<void> {
@@ -42,9 +36,6 @@
     }
     if (Object.keys(modelPatch).length > 0) {
       patch.models = modelPatch;
-    }
-    if ([...pausedFlows].sort().join() !== [...initial.pausedFlows].sort().join()) {
-      patch.pausedFlows = pausedFlows;
     }
     if (Object.keys(patch).length === 0) {
       return;
@@ -80,19 +71,6 @@
       <span class="muted">天</span>
     </span>
   </label>
-  {#each machine.flows as flow (flow.type)}
-    <label class="field">
-      <span>{flow.title}</span>
-      <span class="inline">
-        <input
-          type="checkbox"
-          checked={pausedFlows.includes(flow.type)}
-          onchange={(event) => togglePaused(flow.type, event.currentTarget.checked)}
-        />
-        <span class="muted">暂停这类流程（所有仓库都不跑）</span>
-      </span>
-    </label>
-  {/each}
   <div class="actions">
     <button class="btn btn-primary" type="submit" disabled={commandState.isBusy}>保存</button>
   </div>

@@ -424,6 +424,8 @@ export function getOverview(): Promise<IOverview> {
 
 /** 运行列表的筛选 */
 export interface IRunFilter {
+  /** 流程类型；旧版 hub 不认这个参数，会返回全部 */
+  flow?: string;
   instance?: string;
   status?: string;
   before?: number;
@@ -433,7 +435,7 @@ export interface IRunFilter {
 /** 运行列表，最新的在前 */
 export function listRuns(filter: IRunFilter): Promise<IRunPage> {
   return request<IRunPage>(HUB, '/v1/admin/agents/runs', {
-    query: { instance: filter.instance, status: filter.status, before: filter.before, limit: filter.limit ?? 30 },
+    query: { flow: filter.flow, instance: filter.instance, status: filter.status, before: filter.before, limit: filter.limit ?? 30 },
   });
 }
 
@@ -574,4 +576,31 @@ export function durationText(from: string | null, to: string | null): string {
   }
   const seconds = Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000));
   return seconds < 60 ? `${seconds} 秒` : `${Math.round(seconds / 60)} 分钟`;
+}
+
+/** 流程类型的中文名，机器没报（旧版 agentd 或还没同步）时用 */
+const FLOW_TITLES: Record<string, string> = {
+  review: '代码 review',
+  cleanup: '代码清理',
+  [IMPLEMENT_FLOW]: '一次实现',
+  [EXPLORE_FLOW]: '产品探索',
+};
+
+/** 流程类型的中文名：以机器报上来的为准 */
+export function flowTitle(machines: IMachine[], flowType: string): string {
+  for (const machine of machines) {
+    const flow = machine.flows.find((item) => item.type === flowType);
+    if (flow !== undefined) {
+      return flow.title;
+    }
+  }
+  return FLOW_TITLES[flowType] ?? flowType;
+}
+
+/** 实例在页面上的名字：仓库实例只写仓库名（不带 owner），挂系列文件夹的写文件夹 */
+export function instanceLabel(instance: IInstance): string {
+  if (SERIES_FLOWS.has(instance.flowType)) {
+    return instance.repo;
+  }
+  return instance.repo.slice(instance.repo.indexOf('/') + 1);
 }

@@ -3,6 +3,7 @@
    * 新建或修改实例。
    *
    * 新建：选机器、流程、仓库与开发分支、调度；换流程时按它的默认调度预填。新实例一律是演练模式，看过结果再改成推送。
+   * 在流程页里新建时流程已经定了（fixedFlowType），不再让选。
    * 修改：只把改动过的字段发给 Mac。「允许推到会触发部署的分支」只能在 Mac 上改，这里不提供。
    * 挂系列文件夹的流程（一次实现、产品探索）只能在 Mac 上建，没有开发分支；产品探索可以改想法上限和能不能上网。
    */
@@ -30,12 +31,15 @@
   let {
     instance,
     machines,
+    fixedFlowType = null,
     onClose,
     onSaved,
   }: {
     /** 要修改的实例；null 表示新建 */
     instance: IInstance | null;
     machines: IMachine[];
+    /** 新建时已经定好的流程类型；null 时让用户选 */
+    fixedFlowType?: string | null;
     onClose: () => void;
     onSaved: () => void;
   } = $props();
@@ -48,7 +52,8 @@
     initialMachines.find((item) => item.isOnline) ??
     initialMachines[0] ??
     null;
-  const initialFlowType = initial?.flowType ?? initialMachine?.flows[0]?.type ?? 'review';
+  const fixedFlow = untrack(() => fixedFlowType);
+  const initialFlowType = initial?.flowType ?? fixedFlow ?? initialMachine?.flows[0]?.type ?? 'review';
   const initialSchedule: Schedule = initial?.schedule ?? flowDefaultSchedule(initialMachine, initialFlowType) ?? FALLBACK_SCHEDULE;
 
   let machineId = $state(initial?.machineId ?? initialMachine?.id ?? '');
@@ -242,14 +247,16 @@
         </select>
       </label>
     {/if}
-    <label class="field">
-      <span>流程</span>
-      <select bind:value={() => flowType, selectFlow}>
-        {#each machine?.flows ?? [] as flow (flow.type)}
-          <option value={flow.type}>{flow.title}</option>
-        {/each}
-      </select>
-    </label>
+    {#if fixedFlow === null}
+      <label class="field">
+        <span>流程</span>
+        <select bind:value={() => flowType, selectFlow}>
+          {#each machine?.flows ?? [] as flow (flow.type)}
+            <option value={flow.type}>{flow.title}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     <label class="field">
       <span>仓库</span>
       <input bind:value={repo} placeholder="YadOwO/yado_ai" autocomplete="off" spellcheck="false" />

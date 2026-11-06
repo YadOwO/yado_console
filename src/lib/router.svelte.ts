@@ -14,11 +14,11 @@ export type Route =
   | { name: 'tickets' }
   | { name: 'conversation'; id: string }
   | { name: 'agents' }
+  | { name: 'agentFlow'; flowType: string }
   | { name: 'agentInbox' }
   | { name: 'agentRuns' }
   | { name: 'agentRun'; machineId: string; runId: string }
   | { name: 'agentLessons' }
-  | { name: 'agentIdeas' }
   | { name: 'callback' }
   | { name: 'notFound' };
 
@@ -28,13 +28,17 @@ const CONVERSATION_PATH = /^\/feedback\/conversations\/([0-9a-f-]{36})$/i;
 /** agent 运行详情的路径：/agents/runs/<机器 ID>/<运行 ID> */
 const AGENT_RUN_PATH = /^\/agents\/runs\/([a-z0-9-]{1,40})\/([\w.-]{1,200})$/;
 
+/** agent 流程页的路径：/agents/flows/<流程类型> */
+const AGENT_FLOW_PATH = /^\/agents\/flows\/([a-z][a-z0-9_-]{0,30})$/;
+
 /** agent 的固定页面 */
 const AGENT_PAGES: Record<string, Route> = {
   '/agents': { name: 'agents' },
   '/agents/inbox': { name: 'agentInbox' },
   '/agents/runs': { name: 'agentRuns' },
   '/agents/lessons': { name: 'agentLessons' },
-  '/agents/ideas': { name: 'agentIdeas' },
+  // 想法原来是单独一页，现在在产品探索的流程页里；旧地址照样能开
+  '/agents/ideas': { name: 'agentFlow', flowType: 'explore' },
 };
 
 /** 按路径匹配页面 */
@@ -48,6 +52,10 @@ export function matchRoute(path: string): Route {
   const agentPage = AGENT_PAGES[path];
   if (agentPage !== undefined) {
     return agentPage;
+  }
+  const agentFlow = AGENT_FLOW_PATH.exec(path)?.[1];
+  if (agentFlow !== undefined) {
+    return { name: 'agentFlow', flowType: agentFlow };
   }
   const agentRun = AGENT_RUN_PATH.exec(path);
   if (agentRun?.[1] !== undefined && agentRun[2] !== undefined) {

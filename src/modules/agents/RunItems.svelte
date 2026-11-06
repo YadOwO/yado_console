@@ -1,11 +1,23 @@
 <script lang="ts">
   /**
-   * 运行列表：状态、实例、时间、结论，点进去看详情。总览的「最近运行」和运行记录页共用。
+   * 运行列表：状态、实例、时间、结论，点进去看详情。流程页的「最近运行」和运行记录页共用。
+   *
+   * 实例默认显示仓库名（传 instanceLabels），没有对应项时显示实例 ID；跨流程的列表传 flowTitles，每条前面带流程标签。
    */
   import { formatFullTime, formatTime } from '../../lib/format';
   import { durationText, runStatusClass, runStatusLabel, type IRunListItem } from './api';
 
-  let { runs }: { runs: IRunListItem[] } = $props();
+  let {
+    runs,
+    instanceLabels = {},
+    flowTitles = null,
+  }: {
+    runs: IRunListItem[];
+    /** 实例 ID → 页面上的名字 */
+    instanceLabels?: Record<string, string>;
+    /** 流程类型 → 中文名；null 时不显示流程标签 */
+    flowTitles?: Record<string, string> | null;
+  } = $props();
 
   /** 开始时间与耗时，如「昨天 23:16 · 9 分钟」 */
   function timeText(run: IRunListItem): string {
@@ -20,7 +32,8 @@
       <a class="row" href="/agents/runs/{run.machineId}/{run.id}">
         <div class="meta">
           <span class={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
-          <span class="instance">{run.instanceId}</span>
+          {#if flowTitles !== null}<span class="tag">{flowTitles[run.flowType] ?? run.flowType}</span>{/if}
+          <span class="instance">{instanceLabels[run.instanceId] ?? run.instanceId}</span>
           {#if run.isDryRun}<span class="tag">演练</span>{/if}
           <time class="muted time" datetime={run.queuedAt} title={formatFullTime(run.queuedAt)}>
             {timeText(run)}

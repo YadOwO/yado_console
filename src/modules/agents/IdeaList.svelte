@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
-   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳还是丢弃，都可以写一句备注。
+   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳还是丢弃，都可以写一句备注。放在产品探索的流程页里。
    *
    * 按产品分组，组标题显示没处理的条数与上限；满了的产品下次探索会跳过，处理掉一条才会再想。
    * 采纳只是记下来，不会开工：要做的话在 Mac 上用 /yado-implement I<编号> 接着聊。
-   * 你的处理和备注，主审下次探索前会看，可能总结成「产品偏好」（在「经验」页）。
+   * 你的处理和备注，主审下次探索前会看，可能总结成「产品偏好」（同一页下面）。
    * 已处理的收在每组下面，只有最近一部分。处理都是发指令给 Mac。
    */
   import { onMount } from 'svelte';
@@ -13,7 +13,6 @@
   import { formatDate, formatFullTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
   import { getIdeas, IDEA_NOTE_MAX, IDEA_SIZE_LABEL, type IIdea, type IIdeaList } from './api';
-  import AgentTabs from './AgentTabs.svelte';
   import { commandState, performCommand } from './command.svelte';
 
   /** 一组想法：某个产品探索实例下的一个产品 */
@@ -39,6 +38,7 @@
   let note = $state('');
 
   const groups = $derived(list === null ? [] : groupIdeas(list));
+  const openCount = $derived(groups.reduce((sum, group) => sum + group.open.length, 0));
 
   /** 想法在页面上的唯一键 */
   function ideaKey(idea: IIdea): string {
@@ -75,11 +75,8 @@
     );
   }
 
-  /** 加载想法；isSilent 时不显示加载中 */
-  async function load(isSilent = false): Promise<void> {
-    if (!isSilent) {
-      isLoading = true;
-    }
+  /** 加载想法 */
+  async function load(): Promise<void> {
     try {
       list = await getIdeas();
       errorText = null;
@@ -105,7 +102,7 @@
     }
     if (await performCommand(idea.machineId, { type: 'idea.decide', payload }, `${DECISION_LABEL[decision]} I${idea.id}`)) {
       deciding = null;
-      await load(true);
+      await load();
       refreshAdminStatus().catch(() => undefined);
     }
   }
@@ -144,15 +141,13 @@
   {/if}
 {/snippet}
 
-<section class="page">
-  <header class="page-header">
-    <div class="page-title">
-      <h1>Agent</h1>
-      <p class="page-sub">产品探索提出的想法，你决定采纳还是丢弃</p>
+<div class="block">
+  <div class="section-header">
+    <div class="section-title">
+      <h2>想法</h2>
+      {#if openCount > 0}<span class="section-count">{openCount} 条没处理</span>{/if}
     </div>
-    <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
-  </header>
-  <AgentTabs active="ideas" />
+  </div>
 
   {#if errorText !== null}
     <p class="error-banner">{errorText}</p>
@@ -166,7 +161,7 @@
     {#each groups as group (group.key)}
       <div class="group">
         <div class="group-head">
-          <h2>{group.title}</h2>
+          <h3>{group.title}</h3>
           <span
             class="count"
             class:full={isFull(group)}
@@ -184,7 +179,7 @@
           <article class="idea">
             <div class="idea-head">
               <span class="mono muted id">I{idea.id}</span>
-              <h3>{idea.title}</h3>
+              <h4>{idea.title}</h4>
               <a class="muted time" href="/agents/runs/{idea.machineId}/{idea.runId}" title={formatFullTime(idea.createdAt)}
                 >{formatDate(idea.createdAt)}</a
               >
@@ -260,46 +255,47 @@
         {/if}
       </div>
     {/each}
+    <p class="muted footnote">
+      采纳不会开工，要做的话在 Mac 上用 <span class="mono">/yado-implement I编号</span>。你的处理和备注，主审下次探索前会看，可能总结成下面的「产品偏好」。
+    </p>
   {/if}
-
-  <p class="muted footnote">
-    采纳不会开工，要做的话在 Mac 上用 <span class="mono">/yado-implement I编号</span>。你的处理和备注，主审下次探索前会看，可能总结成「产品偏好」（在「经验」页）。
-  </p>
-</section>
+</div>
 
 <style>
-  .page {
+  .block {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    width: 100%;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px 24px 80px;
-  }
-
-  .page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
     gap: 12px;
   }
 
-  .page-title {
+  .section-header {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
   }
 
-  .page-sub {
+  .section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .section-count {
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--chip-bg);
     color: var(--muted);
-    font-size: 13px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 20px;
+    white-space: nowrap;
   }
 
-  h1 {
-    font-size: 22px;
+  h2 {
+    font-size: 15px;
     font-weight: 600;
-    letter-spacing: -0.02em;
   }
 
   .group {
@@ -314,8 +310,9 @@
     gap: 8px;
   }
 
-  h2 {
-    font-size: 15px;
+  h3 {
+    margin: 0;
+    font-size: 14px;
     font-weight: 600;
     overflow-wrap: anywhere;
   }
@@ -353,7 +350,8 @@
     gap: 8px;
   }
 
-  h3 {
+  h4 {
+    margin: 0;
     font-size: 15px;
     font-weight: 600;
     overflow-wrap: anywhere;
@@ -491,10 +489,6 @@
   }
 
   @media (max-width: 720px) {
-    .page {
-      padding: 16px 16px 80px;
-    }
-
     .actions {
       justify-content: flex-start;
     }

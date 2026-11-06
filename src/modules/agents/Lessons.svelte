@@ -6,14 +6,13 @@
    * 页面上只能作废、恢复：经验会写进给模型的提示词，改文字和手动新增只能在 Mac 上用 agentctl。
    * 生效中的已满时恢复会被 Mac 拒绝，原因显示在提示条上。
    *
-   * 下面是「产品偏好」：主审从你对产品探索想法的处理和备注里总结的一句话，以后的探索照着提想法。
-   * 按产品分组，同样只能作废、恢复。
+   * 产品探索的「产品偏好」不在这里，在产品探索的流程页里。
    */
   import { onMount } from 'svelte';
 
   import { formatDate, formatFullTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
-  import { getLessons, lessonSourceLabel, type ILesson, type ILessonList, type IPreference } from './api';
+  import { getLessons, lessonSourceLabel, type ILesson, type ILessonList } from './api';
   import AgentTabs from './AgentTabs.svelte';
   import { commandState, performCommand } from './command.svelte';
 
@@ -30,72 +29,11 @@
     voided: ILesson[];
   }
 
-  /** 一组产品偏好：某台机器上的一个产品 */
-  interface IPreferenceGroup {
-    key: string;
-    title: string;
-    /** 每个产品生效中偏好的上限；旧版 agentd 没报时为 null */
-    limit: number | null;
-    active: IPreference[];
-    voided: IPreference[];
-  }
-
   let list = $state<ILessonList | null>(null);
   let isLoading = $state(true);
   let errorText = $state<string | null>(null);
 
   const groups = $derived(list === null ? [] : groupLessons(list));
-  const preferenceGroups = $derived(list === null ? [] : groupPreferences(list));
-
-  /** 产品偏好按机器、产品分组，产品按名字排；组内新的在前 */
-  function groupPreferences(data: ILessonList): IPreferenceGroup[] {
-    // 旧版 hub 没有这两个字段
-    const preferences = data.preferences ?? [];
-    const limits = data.preferenceLimits ?? [];
-    const isMultiMachine = new Set(preferences.map((item) => item.machineId)).size > 1;
-    const result = new Map<string, IPreferenceGroup>();
-    for (const preference of [...preferences].sort((a, b) => b.id - a.id)) {
-      const key = `${preference.machineId}/${preference.product}`;
-      let group = result.get(key);
-      if (group === undefined) {
-        group = {
-          key,
-          title: isMultiMachine ? `${preference.product}（${preference.machineId}）` : preference.product,
-          limit: limits.find((item) => item.machineId === preference.machineId)?.limit ?? null,
-          active: [],
-          voided: [],
-        };
-        result.set(key, group);
-      }
-      (preference.status === 'active' ? group.active : group.voided).push(preference);
-    }
-    return [...result.values()].sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
-  }
-
-  /** 作废一条产品偏好，先确认 */
-  async function voidPreference(preference: IPreference): Promise<void> {
-    if (!confirm(`作废 P${preference.id}「${preference.rule}」？以后的产品探索不再照这条提想法，可以在「已作废」里恢复。`)) {
-      return;
-    }
-    if (
-      await performCommand(preference.machineId, { type: 'preference.void', payload: { id: preference.id } }, `作废 P${preference.id}`)
-    ) {
-      await load(true);
-    }
-  }
-
-  /** 恢复一条已作废的产品偏好；这个产品已满时 Mac 会拒绝 */
-  async function restorePreference(preference: IPreference): Promise<void> {
-    if (
-      await performCommand(
-        preference.machineId,
-        { type: 'preference.restore', payload: { id: preference.id } },
-        `恢复 P${preference.id}`,
-      )
-    ) {
-      await load(true);
-    }
-  }
 
   /** 按机器、通用 / 仓库分组：通用在前，仓库按名字排；组内新的在前 */
   function groupLessons(data: ILessonList): ILessonGroup[] {
@@ -161,7 +99,7 @@
   }
 
   /** 生效中的是否已满 */
-  function isFull(group: ILessonGroup | IPreferenceGroup): boolean {
+  function isFull(group: ILessonGroup): boolean {
     return group.limit !== null && group.active.length >= group.limit;
   }
 
@@ -191,7 +129,7 @@
   <header class="page-header">
     <div class="page-title">
       <h1>Agent</h1>
-      <p class="page-sub">主审总结的规则和产品偏好，提出后马上生效</p>
+      <p class="page-sub">主审总结的一句话规则，以后的 agent 都照着做，提出后马上生效</p>
     </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
@@ -279,87 +217,10 @@
     {/each}
   {/if}
 
-  {#if preferenceGroups.length > 0}
-    <h2 class="section-title">产品偏好</h2>
-    <p class="muted section-sub">主审从你对想法的处理和备注里总结的，以后的产品探索照着提想法</p>
-    {#each preferenceGroups as group (group.key)}
-      <div class="group">
-        <div class="group-head">
-          <h2>{group.title}</h2>
-          <span
-            class="count"
-            class:full={isFull(group)}
-            title={group.limit === null ? `生效中 ${group.active.length} 条` : `生效中 ${group.active.length} 条，最多 ${group.limit} 条`}
-          >
-            {group.active.length}{group.limit === null ? '' : `/${group.limit}`}
-          </span>
-        </div>
-
-        {#if group.active.length > 0}
-          <ul class="list">
-            {#each group.active as preference (preference.id)}
-              <li class="lesson">
-                <span class="mono muted id">P{preference.id}</span>
-                <p class="rule">
-                  {preference.rule}{#if preference.reason !== null}<span class="reason">{preference.reason}</span>{/if}
-                </p>
-                <button
-                  class="btn row-btn"
-                  type="button"
-                  disabled={commandState.isBusy}
-                  onclick={() => void voidPreference(preference)}>作废</button
-                >
-                <p class="meta">
-                  {#if preference.sourceRunId !== null}
-                    <span><a class="link" href="/agents/runs/{preference.machineId}/{preference.sourceRunId}">产品探索</a></span>
-                  {/if}
-                  {#if preference.replacesId !== null}<span>替换了 P{preference.replacesId}</span>{/if}
-                  <span
-                    ><time datetime={preference.createdAt} title={formatFullTime(preference.createdAt)}>{formatDate(preference.createdAt)}</time
-                    >加入</span
-                  >
-                </p>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-
-        {#if group.voided.length > 0}
-          <details class="voided">
-            <summary>已作废（{group.voided.length}）</summary>
-            <ul class="list">
-              {#each group.voided as preference (preference.id)}
-                <li class="lesson">
-                  <span class="mono muted id">P{preference.id}</span>
-                  <p class="rule">
-                    {preference.rule}{#if preference.reason !== null}<span class="reason">{preference.reason}</span>{/if}
-                  </p>
-                  <button
-                    class="btn row-btn"
-                    type="button"
-                    title={isFull(group) ? '这个产品生效中的已满，Mac 会拒绝；先作废一条再恢复' : undefined}
-                    disabled={commandState.isBusy}
-                    onclick={() => void restorePreference(preference)}>恢复</button
-                  >
-                  <p class="meta">
-                    {#if preference.replacedById !== null}<span>被 P{preference.replacedById} 替换</span>{/if}
-                    {#if preference.voidedAt !== null}
-                      <span
-                        ><time datetime={preference.voidedAt} title={formatFullTime(preference.voidedAt)}>{formatDate(preference.voidedAt)}</time
-                        >作废</span
-                      >
-                    {/if}
-                  </p>
-                </li>
-              {/each}
-            </ul>
-          </details>
-        {/if}
-      </div>
-    {/each}
-  {/if}
-
-  <p class="muted note">经验和产品偏好提出后马上生效。页面上只能作废、恢复；改文字和手动加只能在 Mac 上用 <span class="mono">agentctl</span>。</p>
+  <p class="muted note">
+    经验提出后马上生效。页面上只能作废、恢复；改文字和手动加只能在 Mac 上用 <span class="mono">agentctl</span>。
+    产品探索的「产品偏好」在<a class="link" href="/agents/flows/explore">产品探索</a>页里。
+  </p>
 </section>
 
 <style>
@@ -522,16 +383,6 @@
 
   .note {
     font-size: 12px;
-  }
-
-  .section-title {
-    margin-top: 12px;
-    font-size: 17px;
-  }
-
-  .section-sub {
-    margin-top: -12px;
-    font-size: 13px;
   }
 
   @media (max-width: 720px) {
