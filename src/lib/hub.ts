@@ -17,6 +17,8 @@ export interface IAdminStatus {
   pendingTicketCount: number | null;
   /** agent 待办数：交给你决定的问题与需要你看一下的运行；非管理员为 null */
   agentInboxCount: number | null;
+  /** 产品探索还没处理的想法数；非管理员为 null，旧版 hub 没有这个字段 */
+  agentIdeaCount?: number | null;
 }
 
 /** 查询当前账号是否为管理员，以及待处理的反馈单数与 agent 待办数；非管理员也返回 200 */

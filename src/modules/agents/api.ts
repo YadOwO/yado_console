@@ -14,8 +14,20 @@ export type Schedule =
   | { kind: 'cron'; expression: string; timezone: string }
   | { kind: 'manual' };
 
-/** 一次实现的流程类型：只能在 Mac 上用 agentctl 提需求，页面上不能立即运行，只推新分支 */
+/** 一次实现的流程类型：只能在 Mac 上用 /yado-implement 或 agentctl 提需求，页面上不能立即运行，只推新分支 */
 export const IMPLEMENT_FLOW = 'implement';
+
+/** 产品探索的流程类型：定时看每个产品出想法，只出想法不改代码 */
+export const EXPLORE_FLOW = 'explore';
+
+/** 挂系列文件夹（例如 ~/yado-code）的流程：实例只能在 Mac 上建，没有开发分支（同步上来的 branch 是 -） */
+export const SERIES_FLOWS: ReadonlySet<string> = new Set([IMPLEMENT_FLOW, EXPLORE_FLOW]);
+
+/** 各流程用到的角色；没列的三个都用 */
+export const FLOW_ROLES: Readonly<Record<string, readonly Role[]>> = {
+  [IMPLEMENT_FLOW]: ['lead', 'fixer'],
+  [EXPLORE_FLOW]: ['lead'],
+};
 
 /** 调用模型的角色 */
 export type Role = 'reviewer' | 'lead' | 'fixer';
@@ -31,7 +43,6 @@ export const ROLES: { role: Role; label: string }[] = [
 export type RunStatus =
   | 'queued'
   | 'running'
-  | 'waiting'
   | 'succeeded'
   | 'needs_attention'
   | 'failed'
@@ -145,6 +156,10 @@ export interface IInstance {
   /** 上次 review 到的提交；代码清理没有，恒为 null */
   cursor: string | null;
   checks: string[];
+  /** 产品探索：每个产品最多几条没处理的想法；别的流程为 null */
+  ideaLimit: number | null;
+  /** 产品探索：主审能不能上网；别的流程为 null */
+  isWebEnabled: boolean | null;
   lastRun: { id: string; status: RunStatus; summary: string | null; reason: string | null; queuedAt: string; finishedAt: string | null } | null;
 }
 
@@ -216,13 +231,82 @@ export interface ILessonLimits {
   repo: number;
 }
 
+/** 产品偏好：主审从你对想法的处理和备注里总结的一句话，以后的产品探索照着提想法 */
+export interface IPreference {
+  /** agentd 本地的偏好 ID，显示为 P<id> */
+  id: number;
+  machineId: string;
+  instanceId: string;
+  product: string;
+  rule: string;
+  reason: string | null;
+  status: 'active' | 'void';
+  /** 总结出它的那次探索 */
+  sourceRunId: string | null;
+  replacesId: number | null;
+  replacedById: number | null;
+  createdAt: string;
+  voidedAt: string | null;
+}
+
 /** 经验列表 */
 export interface ILessonList {
   /** 全部机器的经验，含已作废的 */
   lessons: ILesson[];
   /** 旧版 agentd 没报上限的机器不在里面 */
   limits: ILessonLimits[];
+  /** 全部机器的产品偏好，含最近作废的；旧版 hub 没有 */
+  preferences?: IPreference[];
+  /** 各机器每个产品生效中偏好的上限 */
+  preferenceLimits?: { machineId: string; limit: number }[];
 }
+
+/** 想法的大小：S 半天内、M 一两天、L 更大 */
+export type IdeaSize = 'S' | 'M' | 'L';
+
+/** 产品探索的想法：主审定时看每个产品，提出接下来可以做什么 */
+export interface IIdea {
+  /** agentd 本地的想法 ID，显示为 I<id> */
+  id: number;
+  machineId: string;
+  instanceId: string;
+  product: string;
+  /** 提出它的那次运行 */
+  runId: string;
+  title: string;
+  /** 为什么值得做 */
+  why: string;
+  /** 做什么 */
+  what: string;
+  /** 涉及的仓库目录名 */
+  repos: string[];
+  size: IdeaSize;
+  /** 要你拿主意的问题 */
+  questions: string[];
+  /** open 没处理、adopted 采纳、discarded 丢弃 */
+  status: 'open' | 'adopted' | 'discarded';
+  /** 你处理时写的备注 */
+  note: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+/** 想法列表 */
+export interface IIdeaList {
+  /** 没处理的全部，已处理的只有最近一部分 */
+  ideas: IIdea[];
+  /** 各产品探索实例每个产品没处理想法的上限 */
+  limits: { machineId: string; instanceId: string; ideaLimit: number }[];
+}
+
+/** 处理想法时备注的上限，与 hub、agentd 一致 */
+export const IDEA_NOTE_MAX = 500;
+
+/** 每个产品没处理想法的上限最大能设到几，与 hub、agentd 一致 */
+export const IDEA_LIMIT_MAX = 10;
+
+/** 想法大小的中文 */
+export const IDEA_SIZE_LABEL: Record<IdeaSize, string> = { S: '小（半天内）', M: '中（一两天）', L: '大' };
 
 /** 跑 agentd 的机器 */
 export interface IMachine {
@@ -281,13 +365,15 @@ export type CommandInput =
         maxRounds?: number;
         /** null 表示改回跟随全局 */
         models?: Partial<Record<Role, string | null>>;
+        /** 产品探索：每个产品最多几条没处理的想法 */
+        ideaLimit?: number;
+        /** 产品探索：主审能不能上网 */
+        isWebEnabled?: boolean;
       };
     }
   | { type: 'instance.delete'; payload: { id: string } }
   | { type: 'instance.run'; payload: { id: string } }
   | { type: 'run.cancel'; payload: { runId: string } }
-  /** 一次实现：确认开工 */
-  | { type: 'run.confirm'; payload: { runId: string } }
   | {
       type: 'settings.update';
       payload: Partial<{
@@ -301,7 +387,11 @@ export type CommandInput =
   | { type: 'sync.now'; payload: Record<string, never> }
   // 经验只能作废、恢复；改文字和新增只能在 Mac 上用 agentctl
   | { type: 'lesson.void'; payload: { id: number } }
-  | { type: 'lesson.restore'; payload: { id: number } };
+  | { type: 'lesson.restore'; payload: { id: number } }
+  // 产品探索：想法只能采纳或丢弃（可以写备注），采纳不会开工；偏好和经验一样只能作废、恢复
+  | { type: 'idea.decide'; payload: { id: number; decision: 'adopted' | 'discarded'; note?: string } }
+  | { type: 'preference.void'; payload: { id: number } }
+  | { type: 'preference.restore'; payload: { id: number } };
 
 /** 修改实例的参数 */
 export type UpdateInstancePayload = Extract<CommandInput, { type: 'instance.update' }>['payload'];
@@ -355,9 +445,14 @@ export function getRun(machineId: string, runId: string): Promise<IRunDetail> {
   );
 }
 
-/** 经验列表与各机器的上限 */
+/** 经验、产品偏好与各机器的上限 */
 export function getLessons(): Promise<ILessonList> {
   return request<ILessonList>(HUB, '/v1/admin/agents/lessons');
+}
+
+/** 产品探索的想法与各实例的上限 */
+export function getIdeas(): Promise<IIdeaList> {
+  return request<IIdeaList>(HUB, '/v1/admin/agents/ideas');
 }
 
 /** 发指令 */
@@ -374,7 +469,6 @@ export function getCommand(id: string): Promise<ICommand> {
 const RUN_STATUS = new Map<string, { label: string; tone: string }>([
   ['queued', { label: '排队中', tone: 'neutral' }],
   ['running', { label: '运行中', tone: 'neutral' }],
-  ['waiting', { label: '等你确认', tone: 'pending' }],
   ['succeeded', { label: '完成', tone: 'resolved' }],
   ['needs_attention', { label: '要你处理', tone: 'pending' }],
   ['failed', { label: '失败', tone: 'danger' }],

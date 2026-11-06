@@ -11,6 +11,7 @@
   import { IS_AUTH_DEV_BYPASS, LOGTO_APP_ID } from './lib/config';
   import { errorMessage, isUnauthorized } from './lib/http';
   import { current, handleLinkClick, matchRoute, navigate } from './lib/router.svelte';
+  import AgentIdeas from './modules/agents/Ideas.svelte';
   import AgentInbox from './modules/agents/Inbox.svelte';
   import AgentLessons from './modules/agents/Lessons.svelte';
   import AgentOverview from './modules/agents/Overview.svelte';
@@ -149,6 +150,8 @@
         {/key}
       {:else if route.name === 'agentLessons'}
         <AgentLessons />
+      {:else if route.name === 'agentIdeas'}
+        <AgentIdeas />
       {:else}
         <p class="empty">页面不存在，<a class="link" href="/feedback">回到意见反馈</a></p>
       {/if}

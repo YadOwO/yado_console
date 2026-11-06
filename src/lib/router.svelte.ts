@@ -18,6 +18,7 @@ export type Route =
   | { name: 'agentRuns' }
   | { name: 'agentRun'; machineId: string; runId: string }
   | { name: 'agentLessons' }
+  | { name: 'agentIdeas' }
   | { name: 'callback' }
   | { name: 'notFound' };
 
@@ -33,6 +34,7 @@ const AGENT_PAGES: Record<string, Route> = {
   '/agents/inbox': { name: 'agentInbox' },
   '/agents/runs': { name: 'agentRuns' },
   '/agents/lessons': { name: 'agentLessons' },
+  '/agents/ideas': { name: 'agentIdeas' },
 };
 
 /** 按路径匹配页面 */

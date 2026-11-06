@@ -45,7 +45,7 @@
     if (status === 'succeeded') {
       return 'resolved';
     }
-    if (status === 'needs_attention' || status === 'waiting') {
+    if (status === 'needs_attention') {
       return 'pending';
     }
     if (status === 'failed' || status === 'interrupted') {

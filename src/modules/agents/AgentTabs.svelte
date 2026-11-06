@@ -1,20 +1,25 @@
 <script lang="ts">
   /**
-   * Agent 各页面顶部的标签（总览 / 待办 / 运行记录 / 经验），以及底部的指令进度提示条。
+   * Agent 各页面顶部的标签（总览 / 待办 / 想法 / 运行记录 / 经验），以及底部的指令进度提示条。
    */
   import { adminStatus } from '../../lib/admin-status.svelte';
   import { commandState, dismissNotice } from './command.svelte';
 
   /** 当前所在的标签 */
-  let { active }: { active: 'overview' | 'inbox' | 'runs' | 'lessons' } = $props();
+  let { active }: { active: 'overview' | 'inbox' | 'ideas' | 'runs' | 'lessons' } = $props();
 
   const inboxCount = $derived(adminStatus.value?.agentInboxCount ?? 0);
+  /** 产品探索还没处理的想法数 */
+  const ideaCount = $derived(adminStatus.value?.agentIdeaCount ?? 0);
 </script>
 
 <nav class="tabs" aria-label="Agent">
   <a href="/agents" aria-current={active === 'overview' ? 'page' : undefined}>总览</a>
   <a href="/agents/inbox" aria-current={active === 'inbox' ? 'page' : undefined}>
     待办{#if inboxCount > 0}<span class="count">{inboxCount}</span>{/if}
+  </a>
+  <a href="/agents/ideas" aria-current={active === 'ideas' ? 'page' : undefined}>
+    想法{#if ideaCount > 0}<span class="count count-muted">{ideaCount}</span>{/if}
   </a>
   <a href="/agents/runs" aria-current={active === 'runs' ? 'page' : undefined}>运行记录</a>
   <a href="/agents/lessons" aria-current={active === 'lessons' ? 'page' : undefined}>经验</a>
@@ -78,6 +83,12 @@
     font-variant-numeric: tabular-nums;
     line-height: 18px;
     text-align: center;
+  }
+
+  /* 想法不算待办，角标用灰色，不催 */
+  .count-muted {
+    background: var(--chip-bg);
+    color: var(--muted);
   }
 
   .toast {

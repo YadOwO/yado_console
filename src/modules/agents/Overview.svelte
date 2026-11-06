@@ -12,8 +12,10 @@
   import { formatFullTime, formatTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
   import {
+    EXPLORE_FLOW,
     getOverview,
     IMPLEMENT_FLOW,
+    SERIES_FLOWS,
     listRuns,
     runStatusClass,
     runStatusLabel,
@@ -93,7 +95,8 @@
 
   /** 删除实例，先确认 */
   function remove(instance: IInstance): void {
-    if (confirm(`删除 ${instance.repo}（${instance.branch}）的${flowTitle(instance)}？运行记录会保留，不修清单会清空。`)) {
+    const where = SERIES_FLOWS.has(instance.flowType) ? instance.repo : `${instance.repo}（${instance.branch}）`;
+    if (confirm(`删除 ${where} 的${flowTitle(instance)}？运行记录会保留，不修清单会清空。`)) {
       void act(instance, { type: 'instance.delete', payload: { id: instance.id } }, '删除');
     }
   }
@@ -113,7 +116,7 @@
   <header class="page-header">
     <div class="page-title">
       <h1>Agent</h1>
-      <p class="page-sub">Mac 上的自动 review、修复与清理</p>
+      <p class="page-sub">Mac 上的自动 review、修复、清理与产品探索</p>
     </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
@@ -210,12 +213,14 @@
           >
             <div class="instance-head">
               <span class="repo">{instance.repo}</span>
-              <span class="tag">{instance.branch}</span>
+              {#if !SERIES_FLOWS.has(instance.flowType)}<span class="tag">{instance.branch}</span>{/if}
               <span class="tag">{flowTitle(instance)}</span>
               <span class="instance-state">
                 {#if !instance.isEnabled}<span class="status status-neutral">已暂停</span>{/if}
                 {#if instance.flowType === IMPLEMENT_FLOW}
                   <span class="status status-resolved">推新分支</span>
+                {:else if instance.flowType === EXPLORE_FLOW}
+                  <span class="status status-info">只出想法</span>
                 {:else}
                   <span class="status {instance.isDryRun ? 'status-info' : 'status-resolved'}">{instance.isDryRun ? '演练' : '推送'}</span>
                 {/if}
@@ -226,7 +231,10 @@
               {#if instance.isEnabled && instance.nextRunAt !== null}
                 · 下次 <time datetime={instance.nextRunAt} title={formatFullTime(instance.nextRunAt)}>{formatTime(instance.nextRunAt)}</time>
               {/if}
-              {#if instance.flowType !== IMPLEMENT_FLOW}· 最多 {instance.maxRounds} 轮{/if}
+              {#if instance.flowType === EXPLORE_FLOW}
+                {#if instance.ideaLimit !== null}· 每个产品最多 {instance.ideaLimit} 条想法{/if}
+                {#if instance.isWebEnabled === true}· 可以上网{/if}
+              {:else if instance.flowType !== IMPLEMENT_FLOW}· 最多 {instance.maxRounds} 轮{/if}
               <!-- 代码清理没有「review 到哪」，cursor 恒为 null -->
               {#if instance.cursor !== null && instance.flowType !== 'cleanup'}
                 · review 到 <span class="mono">{shortSha(instance.cursor)}</span>

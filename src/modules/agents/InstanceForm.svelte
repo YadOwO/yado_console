@@ -4,13 +4,18 @@
    *
    * 新建：选机器、流程、仓库与开发分支、调度；换流程时按它的默认调度预填。新实例一律是演练模式，看过结果再改成推送。
    * 修改：只把改动过的字段发给 Mac。「允许推到会触发部署的分支」只能在 Mac 上改，这里不提供。
+   * 挂系列文件夹的流程（一次实现、产品探索）只能在 Mac 上建，没有开发分支；产品探索可以改想法上限和能不能上网。
    */
   import { untrack } from 'svelte';
 
   import {
     BROWSER_TIMEZONE,
+    EXPLORE_FLOW,
+    FLOW_ROLES,
+    IDEA_LIMIT_MAX,
     IMPLEMENT_FLOW,
     ROLES,
+    SERIES_FLOWS,
     type IInstance,
     type IMachine,
     type Role,
@@ -64,18 +69,26 @@
     lead: initial?.models.lead ?? '',
     fixer: initial?.models.fixer ?? '',
   });
+  let ideaLimit = $state(initial?.ideaLimit ?? 3);
+  let isWebEnabled = $state(initial?.isWebEnabled ?? false);
   let errorText = $state<string | null>(null);
 
   /** 代码清理：每周挑改得多的文件做不改行为的重构，没有「review 到哪」 */
   const isCleanup = $derived(flowType === 'cleanup');
   /** 一次实现：调度固定只手动，在 Mac 上用 agentctl 提需求；只推新分支，没有演练模式和轮数 */
   const isImplement = $derived(flowType === IMPLEMENT_FLOW);
+  /** 产品探索：只出想法，不改代码，没有演练模式和轮数 */
+  const isExplore = $derived(flowType === EXPLORE_FLOW);
+  /** 挂系列文件夹：没有开发分支，只能在 Mac 上建 */
+  const isSeries = $derived(SERIES_FLOWS.has(flowType));
+  /** 这个流程用到的角色，只给它们选模型 */
+  const roles = $derived(ROLES.filter(({ role }) => (FLOW_ROLES[flowType] ?? [role]).includes(role)));
   /** 推送的是什么：review 推修复，代码清理推重构 */
   const changeNoun = $derived(isCleanup ? '重构' : '修复');
   /** 新建时的说明 */
   const createHint = $derived(
-    isImplement
-      ? '在 Mac 上用 agentctl implement <实例> <需求> 提需求；主审问清楚后在待办里确认开工，实现完推到新分支 feat/…，不碰开发分支。'
+    isSeries
+      ? `挂本机的系列文件夹，只能在 Mac 上用 agentctl instance add ${flowType} <文件夹> 建。`
       : isCleanup
       ? '每周挑最近改得多的几个文件做不改行为的小重构。新实例是演练模式：只出报告不推送，看过结果再改成推送。'
       : flowType === 'review'
@@ -151,8 +164,14 @@
     if (maxRounds !== current.maxRounds) {
       patch.maxRounds = maxRounds;
     }
+    if (current.ideaLimit !== null && ideaLimit !== current.ideaLimit) {
+      patch.ideaLimit = ideaLimit;
+    }
+    if (current.isWebEnabled !== null && isWebEnabled !== current.isWebEnabled) {
+      patch.isWebEnabled = isWebEnabled;
+    }
     const modelPatch: Partial<Record<Role, string | null>> = {};
-    for (const { role } of ROLES) {
+    for (const { role } of roles) {
       const next = models[role] === '' ? null : models[role];
       if (next !== (current.models[role] ?? null)) {
         modelPatch[role] = next;
@@ -175,6 +194,10 @@
     }
     if (branch.trim() === '') {
       errorText = '请填写开发分支';
+      return;
+    }
+    if (isExplore && (!Number.isInteger(ideaLimit) || ideaLimit < 1 || ideaLimit > IDEA_LIMIT_MAX)) {
+      errorText = `想法上限要在 1～${IDEA_LIMIT_MAX} 之间`;
       return;
     }
 
@@ -233,10 +256,12 @@
     </label>
   {/if}
 
+  {#if !isSeries}
   <label class="field">
     <span>开发分支</span>
     <input bind:value={branch} autocomplete="off" spellcheck="false" />
   </label>
+  {/if}
   {#if initial !== null && flowType === 'review' && branch.trim() !== initial.branch}
     <p class="hint">换分支后从新分支的最新提交开始 review。</p>
   {/if}
@@ -280,7 +305,24 @@
   {#if initial === null}
     <p class="hint">{createHint}</p>
   {:else}
-    {#if !isImplement}
+    {#if isExplore}
+    <label class="field">
+      <span>想法上限</span>
+      <span class="inline">
+        <input class="narrow" type="number" min="1" max={IDEA_LIMIT_MAX} bind:value={ideaLimit} />
+        <span class="muted">条 / 每个产品</span>
+      </span>
+    </label>
+    <p class="hint">没处理的想法到了上限，这个产品就跳过，处理掉一条才会再想。</p>
+    <div class="field">
+      <span>上网调研</span>
+      <div class="segmented" role="group" aria-label="上网调研">
+        <button type="button" aria-pressed={!isWebEnabled} onclick={() => (isWebEnabled = false)}>关</button>
+        <button type="button" aria-pressed={isWebEnabled} onclick={() => (isWebEnabled = true)}>开</button>
+      </div>
+    </div>
+    <p class="hint">打开后主审可以上网查竞品、平台规则这类资料。</p>
+    {:else if !isImplement}
     <div class="field">
       <span>模式</span>
       <div class="segmented" role="group" aria-label="模式">
@@ -294,7 +336,7 @@
       <input class="narrow" type="number" min="1" max="5" bind:value={maxRounds} />
     </label>
     {/if}
-    {#each ROLES as { role, label } (role)}
+    {#each roles as { role, label } (role)}
       <label class="field">
         <span>{label}模型</span>
         <select bind:value={models[role]}>
@@ -312,7 +354,7 @@
   {/if}
   <div class="actions">
     <button class="btn" type="button" onclick={onClose}>取消</button>
-    <button class="btn btn-primary" type="submit" disabled={commandState.isBusy || machineId === ''}>
+    <button class="btn btn-primary" type="submit" disabled={commandState.isBusy || machineId === '' || (initial === null && isSeries)}>
       {initial === null ? '新建' : '保存'}
     </button>
   </div>

@@ -4,7 +4,7 @@
    *
    * 问题可以选「不修」（加进不修清单，以后同样的问题不再提）、「已处理」（你自己改了或决定不管），
    * 或「交给主审」：Mac 上另开一次运行，主审看最新代码在修和不修里选一个，可以先补充一段信息给它。
-   * 运行只能「知道了」。一次实现等你确认需求的运行：在 Paseo 里和主审聊完后「确认开工」，不做了就「取消」。
+   * 运行只能「知道了」。
    * 处理都是发指令给 Mac，成功后从列表里消失。
    */
   import { onMount } from 'svelte';
@@ -60,17 +60,6 @@
     }
   }
 
-  /** 一次实现：确认开工，或者不做了取消这次运行 */
-  async function decideWaiting(item: IInboxItem, action: 'confirm' | 'cancel'): Promise<void> {
-    const input =
-      action === 'confirm'
-        ? ({ type: 'run.confirm', payload: { runId: item.runId } } as const)
-        : ({ type: 'run.cancel', payload: { runId: item.runId } } as const);
-    if (await performCommand(item.machineId, input, action === 'confirm' ? '确认开工' : '取消需求')) {
-      removeItem(item);
-    }
-  }
-
   /** 打开「交给主审」的补充信息 */
   function openDelegate(item: IInboxItem): void {
     delegatingId = item.id;
@@ -100,7 +89,7 @@
   <header class="page-header">
     <div class="page-title">
       <h1>Agent</h1>
-      <p class="page-sub">主审交给你的问题、等你确认的需求，和需要你看一下的运行</p>
+      <p class="page-sub">主审交给你的问题，和需要你看一下的运行</p>
     </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
@@ -119,7 +108,7 @@
       {#each items as item (`${item.machineId}/${item.id}`)}
         <li
           class="item"
-          class:tone-pending={item.kind === 'finding' || item.runStatus === 'needs_attention' || item.runStatus === 'waiting'}
+          class:tone-pending={item.kind === 'finding' || item.runStatus === 'needs_attention'}
           class:tone-danger={item.runStatus === 'failed' || item.runStatus === 'interrupted'}
         >
           <div class="meta">
@@ -175,21 +164,6 @@
                   title="你已经处理了，或者决定不管"
                   disabled={commandState.isBusy}
                   onclick={() => void resolve(item, 'done')}>已处理</button
-                >
-              {:else if item.runStatus === 'waiting'}
-                <button
-                  class="btn"
-                  type="button"
-                  title="这个需求不做了，取消这次运行"
-                  disabled={commandState.isBusy}
-                  onclick={() => void decideWaiting(item, 'cancel')}>取消</button
-                >
-                <button
-                  class="btn btn-primary"
-                  type="button"
-                  title="主审按你们在 Paseo 里聊定的需求写方案，然后实现、检查、推到新分支"
-                  disabled={commandState.isBusy}
-                  onclick={() => void decideWaiting(item, 'confirm')}>确认开工</button
                 >
               {:else}
                 <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void resolve(item, 'done')}
