@@ -4,7 +4,8 @@
    *
    * 问题可以选「不修」（加进不修清单，以后同样的问题不再提）、「已处理」（你自己改了或决定不管），
    * 或「交给主审」：Mac 上另开一次运行，主审看最新代码在修和不修里选一个，可以先补充一段信息给它。
-   * 运行只能「知道了」。
+   * 一次实现做完的新功能（运行状态为成功）：选「不合」（feat 分支留着）、「合」（Mac 上合进开发分支）或「交给主审」（主审判合不合）。
+   * 其他运行只能「知道了」。
    * 等你点头的运行（发布计划待确认、发布要你确认）：看全文，同意或拒绝，可以写备注；页面不能改计划和命令。
    * 处理都是发指令给 Mac，成功后从列表里消失。
    */
@@ -25,8 +26,23 @@
     '主审会看最新代码，在修和不修里选一个，不会再交回给你。选了修就照常修复、复审，推不推送跟实例的模式走（演练模式不推送）；' +
     '选了不修就加进不修清单。结果在运行记录里看。';
 
-  /** 同意或拒绝后会怎样：按等你点头的种类和决定 */
+  /** 新功能「交给主审」的说明 */
+  const MERGE_DELEGATE_HINT =
+    '主审看需求、重点关注和改动，只判合不合，不做代码 review。判合就合进开发分支；判不合会带着理由回到待办，你再选。';
+
+  /**
+   * 是不是一次实现做完的新功能：待办里只有它是成功状态的运行。
+   * 这类待办选「合」或「交给主审」都会在 Mac 上另开一次运行。
+   */
+  function isDoneFeature(item: IInboxItem): boolean {
+    return item.kind === 'run' && item.runStatus === 'succeeded';
+  }
+
+  /** 同意或拒绝后会怎样：按等你点头的种类和决定；新功能的「合」也走这里确认 */
   function decideHint(item: IInboxItem, decision: 'approve' | 'reject'): string {
+    if (isDoneFeature(item)) {
+      return 'Mac 上把 feat 分支接到最新的开发分支，动过就再跑一遍检查，都通过才推上去，推上的删掉 feat 分支。没合成会回到待办。';
+    }
     if (item.approvalKind === 'plan') {
       return decision === 'approve'
         ? 'Mac 上接着发：先确认 main 没动过，再按计划做服务器准备、快进 main、等部署跑完、检查线上。出问题就停下来再找你。'
@@ -56,7 +72,8 @@
     if (text !== '') {
       payload.note = text;
     }
-    if (await performCommand(item.machineId, { type: 'inbox.resolve', payload }, decision === 'approve' ? '同意' : '拒绝')) {
+    const label = isDoneFeature(item) ? '合进开发分支' : decision === 'approve' ? '同意' : '拒绝';
+    if (await performCommand(item.machineId, { type: 'inbox.resolve', payload }, label)) {
       decidingId = null;
       removeItem(item);
     }
@@ -85,15 +102,10 @@
     refreshAdminStatus().catch(() => undefined);
   }
 
-  /** 处理一条待办 */
+  /** 处理一条待办；新功能的 done 就是「不合」 */
   async function resolve(item: IInboxItem, action: 'wontfix' | 'done'): Promise<void> {
-    if (
-      await performCommand(
-        item.machineId,
-        { type: 'inbox.resolve', payload: { itemId: item.id, action } },
-        action === 'wontfix' ? '标记不修' : '标记已处理',
-      )
-    ) {
+    const label = action === 'wontfix' ? '标记不修' : isDoneFeature(item) ? '不合' : '标记已处理';
+    if (await performCommand(item.machineId, { type: 'inbox.resolve', payload: { itemId: item.id, action } }, label)) {
       removeItem(item);
     }
   }
@@ -147,7 +159,10 @@
       {#each items as item (`${item.machineId}/${item.id}`)}
         <li
           class="item"
-          class:tone-pending={item.kind === 'finding' || item.runStatus === 'needs_attention' || item.runStatus === 'waiting'}
+          class:tone-pending={item.kind === 'finding' ||
+            item.runStatus === 'needs_attention' ||
+            item.runStatus === 'waiting' ||
+            isDoneFeature(item)}
           class:tone-danger={item.runStatus === 'failed' || item.runStatus === 'interrupted'}
         >
           <div class="meta">
@@ -156,6 +171,8 @@
               {#if item.severity !== null}<span class="tag">{severityLabel(item.severity)}</span>{/if}
             {:else if item.runStatus === 'waiting'}
               <span class="status status-pending">等你点头</span>
+            {:else if isDoneFeature(item)}
+              <span class="status status-pending">新功能</span>
             {:else if item.runStatus !== null}
               <span class={runStatusClass(item.runStatus)}>运行{runStatusLabel(item.runStatus)}</span>
             {/if}
@@ -178,7 +195,11 @@
                 bind:value={note}
                 rows="2"
                 maxlength={APPROVAL_NOTE_MAX}
-                placeholder={decision === 'approve' ? '备注（可选）：比如先发哪个' : '备注（可选）：为什么不发'}
+                placeholder={isDoneFeature(item)
+                  ? '备注（可选）'
+                  : decision === 'approve'
+                    ? '备注（可选）：比如先发哪个'
+                    : '备注（可选）：为什么不发'}
                 aria-label="同意或拒绝的备注"
               ></textarea>
               <div class="actions">
@@ -188,18 +209,19 @@
                   class:btn-primary={decision === 'approve'}
                   type="button"
                   disabled={commandState.isBusy}
-                  onclick={() => void decide(item)}>{decision === 'approve' ? '确定同意' : '确定拒绝'}</button
+                  onclick={() => void decide(item)}
+                  >{isDoneFeature(item) ? '确定合' : decision === 'approve' ? '确定同意' : '确定拒绝'}</button
                 >
               </div>
             </div>
           {:else if delegatingId === item.id}
             <div class="delegate">
-              <p class="muted hint">{DELEGATE_HINT}</p>
+              <p class="muted hint">{isDoneFeature(item) ? MERGE_DELEGATE_HINT : DELEGATE_HINT}</p>
               <textarea
                 bind:value={note}
                 rows="3"
                 maxlength={DELEGATE_NOTE_MAX}
-                placeholder="补充信息（可选）：比如回答上面主审的问题"
+                placeholder={isDoneFeature(item) ? '补充信息（可选）：比如你最担心哪里' : '补充信息（可选）：比如回答上面主审的问题'}
                 aria-label="补充给主审的信息"
               ></textarea>
               <div class="actions">
@@ -239,6 +261,24 @@
                 >
                 <button class="btn btn-primary" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'approve')}
                   >同意</button
+                >
+              {:else if isDoneFeature(item)}
+                <button
+                  class="btn"
+                  type="button"
+                  title="不进开发分支，feat 分支留着"
+                  disabled={commandState.isBusy}
+                  onclick={() => void resolve(item, 'done')}>不合</button
+                >
+                <button
+                  class="btn"
+                  type="button"
+                  title="让主审（Opus）看需求和改动，判合不合"
+                  disabled={commandState.isBusy}
+                  onclick={() => openDelegate(item)}>交给主审</button
+                >
+                <button class="btn btn-primary" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'approve')}
+                  >合</button
                 >
               {:else}
                 <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void resolve(item, 'done')}
