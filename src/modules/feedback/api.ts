@@ -82,6 +82,23 @@ export interface IMessage {
   ticketId: string;
   /** 用户消息附带的设备信息；管理员消息为 null */
   clientInfo: IClientInfo | null;
+  /** 用户勾选后附带的 MetricKit 诊断；没有时为 null（旧版 hub 不返回该字段） */
+  diagnostics?: IDiagnostic[] | null;
+}
+
+/** 诊断类型：崩溃、卡顿、磁盘写入异常 */
+export type DiagnosticKind = 'crash' | 'hang' | 'diskWrite';
+
+/** 用户勾选后随反馈附带的一份 MetricKit 诊断 */
+export interface IDiagnostic {
+  kind: DiagnosticKind;
+  /** ISO 8601 UTC 时间 */
+  timestamp: string;
+  osVersion: string;
+  appVersion: string;
+  buildVersion: string;
+  /** 未符号化的调用栈 JSON 文本，原样显示 */
+  callStackTree: string;
 }
 
 /** 消息的一页，按序号倒序 */
@@ -145,6 +162,14 @@ export function updateTicketStatus(ticketId: string, status: TicketStatus): Prom
     method: 'POST',
     body: { status },
   });
+}
+
+/** 诊断类型的中文名 */
+export function diagnosticKindLabel(kind: DiagnosticKind): string {
+  if (kind === 'crash') {
+    return '崩溃';
+  }
+  return kind === 'hang' ? '卡顿' : '磁盘写入异常';
 }
 
 /** 状态的中文名 */

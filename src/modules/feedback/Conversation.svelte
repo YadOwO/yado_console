@@ -11,6 +11,7 @@
   import { formatFullTime, formatTime } from '../../lib/format';
   import { ApiError, errorMessage } from '../../lib/http';
   import {
+    diagnosticKindLabel,
     getConversation,
     listMessages,
     MESSAGE_MAX_LENGTH,
@@ -378,6 +379,17 @@
                 <span class="mono">· {row.device}</span>
               {/if}
             </div>
+            {#if row.message.diagnostics != null && row.message.diagnostics.length > 0}
+              <details class="diagnostics">
+                <summary>附带诊断信息（{row.message.diagnostics.length} 份）</summary>
+                {#each row.message.diagnostics as diagnostic}
+                  <div class="muted">
+                    {diagnosticKindLabel(diagnostic.kind)} · {formatFullTime(diagnostic.timestamp)} · App {diagnostic.appVersion} ({diagnostic.buildVersion}) · {diagnostic.osVersion}
+                  </div>
+                  <pre class="mono">{diagnostic.callStackTree}</pre>
+                {/each}
+              </details>
+            {/if}
           </div>
         {/if}
       {/each}
@@ -546,6 +558,29 @@
 
   .meta .mono {
     font-size: 11px;
+  }
+
+  .diagnostics {
+    max-width: 100%;
+    font-size: 12px;
+  }
+
+  .diagnostics summary {
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .diagnostics pre {
+    max-width: 100%;
+    max-height: 320px;
+    margin: 4px 0 8px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-sunken);
+    font-size: 11px;
+    overflow: auto;
+    white-space: pre;
   }
 
   .composer {
