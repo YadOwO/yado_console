@@ -3,7 +3,7 @@
    * Agent 总览：机器状态、待办提醒、各流程一张卡（实例数、下次运行、上次运行；点进去看实例、运行和流程自己的东西）、全局设置。
    *
    * 页面可见时每 10 秒从 hub 刷新一次。hub 上的数据是 Mac 最近一次上传时的状态（有新动态时约 2～7 秒内，否则一小时一次），
-   * 「立即同步」让 Mac 马上传一次。
+   * 「立即同步」让 Mac 马上传一次。点机器上的「运行中 · 排队」展开看具体是哪些运行，展开时跟着一起刷新。
    */
   import { onMount } from 'svelte';
 
@@ -15,6 +15,7 @@
     getOverview,
     IMPLEMENT_FLOW,
     instanceLabel,
+    listRuns,
     runStatusClass,
     runStatusLabel,
     SERIES_FLOWS,
@@ -22,9 +23,11 @@
     type IInstance,
     type IMachine,
     type IOverview,
+    type IRunListItem,
   } from './api';
   import AgentTabs from './AgentTabs.svelte';
   import { commandState, performCommand } from './command.svelte';
+  import RunItems from './RunItems.svelte';
   import SettingsForm from './SettingsForm.svelte';
 
   /** 自动刷新间隔 */
@@ -50,6 +53,51 @@
   /** 产品探索还没处理的想法数 */
   const ideaCount = $derived(adminStatus.value?.agentIdeaCount ?? 0);
   const cards = $derived(overview === null ? [] : buildCards(overview));
+  const instanceLabels = $derived(Object.fromEntries((overview?.instances ?? []).map((item) => [item.id, instanceLabel(item)])));
+
+  /** 展开了运行中与排队列表的机器 */
+  let expandedMachineId = $state<string | null>(null);
+  /** 展开的机器上还没结束的运行：运行中在前，排队的按先来后到 */
+  let activeRuns = $state<IRunListItem[] | null>(null);
+  let activeError = $state<string | null>(null);
+  /** 每次加载递增；收起或换机器后丢弃旧请求的结果 */
+  let activeVersion = 0;
+
+  /** 机器上的流程类型 → 中文名，列表里每条前面带上 */
+  function flowTitlesOf(machine: IMachine): Record<string, string> {
+    return Object.fromEntries(machine.flows.map((item) => [item.type, item.title]));
+  }
+
+  /** 加载某台机器运行中与排队的运行；运行列表不能按机器筛，取回来再挑 */
+  async function loadActive(machineId: string): Promise<void> {
+    const version = ++activeVersion;
+    try {
+      const [running, queued] = await Promise.all([listRuns({ status: 'running' }), listRuns({ status: 'queued' })]);
+      if (version !== activeVersion) {
+        return;
+      }
+      const queuedOldestFirst = [...queued.runs].sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+      activeRuns = [...running.runs, ...queuedOldestFirst].filter((run) => run.machineId === machineId);
+      activeError = null;
+    } catch (error) {
+      if (version === activeVersion) {
+        activeError = errorMessage(error);
+      }
+    }
+  }
+
+  /** 展开或收起某台机器的运行中与排队列表 */
+  function toggleActive(machineId: string): void {
+    activeRuns = null;
+    activeError = null;
+    if (expandedMachineId === machineId) {
+      expandedMachineId = null;
+      activeVersion++;
+      return;
+    }
+    expandedMachineId = machineId;
+    void loadActive(machineId);
+  }
 
   /** 卡头的模式标记：review、代码清理复审通过就推到开发分支 */
   function badgeOf(flow: IFlow): IFlowCard['badge'] {
@@ -101,6 +149,9 @@
     try {
       overview = await getOverview();
       errorText = null;
+      if (expandedMachineId !== null) {
+        void loadActive(expandedMachineId);
+      }
     } catch (error) {
       errorText = errorMessage(error);
     } finally {
@@ -159,13 +210,32 @@
           <span class="muted machine-meta" title={formatFullTime(machine.lastSeenAt)}>{machineText(machine)}</span>
         </div>
         {#if machine.health !== null}
-          <span class="machine-health">运行中 {machine.health.activeRuns} · 排队 {machine.health.queuedRuns}</span>
+          <button
+            class="machine-health"
+            class:open={expandedMachineId === machine.id}
+            type="button"
+            aria-expanded={expandedMachineId === machine.id}
+            onclick={() => toggleActive(machine.id)}
+          >
+            运行中 {machine.health.activeRuns} · 排队 {machine.health.queuedRuns}
+          </button>
         {/if}
         <button class="btn sync" type="button" disabled={commandState.isBusy} onclick={() => void syncNow(machine)}>立即同步</button>
         {#if machine.health !== null && machine.health.status !== 'ok'}
           <p class="machine-error">{machine.health.detail}</p>
         {/if}
       </div>
+      {#if expandedMachineId === machine.id}
+        {#if activeError !== null}
+          <p class="error-banner">{activeError}</p>
+        {:else if activeRuns === null}
+          <p class="active-empty">加载中…</p>
+        {:else if activeRuns.length === 0}
+          <p class="active-empty">现在没有运行中或排队的运行</p>
+        {:else}
+          <RunItems runs={activeRuns} {instanceLabels} flowTitles={flowTitlesOf(machine)} />
+        {/if}
+      {/if}
     {/each}
 
     {#if overview.inbox.length > 0}
@@ -313,9 +383,43 @@
     font-size: 12px;
   }
 
+  /* 点开看运行中与排队的是哪些 */
   .machine-health {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
     color: var(--muted);
+    cursor: pointer;
+    font: inherit;
     font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .machine-health::after {
+    content: '›';
+    transform: rotate(90deg);
+    transition: transform 0.15s;
+  }
+
+  .machine-health:hover,
+  .machine-health.open {
+    background: var(--chip-bg);
+    color: var(--fg);
+  }
+
+  .machine-health.open::after {
+    transform: rotate(-90deg);
+  }
+
+  .active-empty {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
   }
 
   .machine .sync {
