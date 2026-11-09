@@ -2,7 +2,7 @@
   /**
    * 产品偏好：主审从你对产品探索想法的处理和备注里总结的一句话，以后的探索照着提想法。放在产品探索的流程页里。
    *
-   * 按产品分组，组标题显示生效中的条数与上限；已作废的收在每组下面，可以恢复。
+   * 按产品分组、和想法一样按你排的先后，组标题显示生效中的条数与上限；已作废的收在每组下面，可以恢复。
    * 页面上只能作废、恢复：偏好会写进给主审的材料，改文字和新增不开放。这个产品生效中的已满时恢复会被 Mac 拒绝。
    */
   import { onMount } from 'svelte';
@@ -15,6 +15,7 @@
   /** 一组产品偏好：某台机器上的一个产品 */
   interface IPreferenceGroup {
     key: string;
+    product: string;
     title: string;
     /** 每个产品生效中偏好的上限；旧版 agentd 没报时为 null */
     limit: number | null;
@@ -22,12 +23,25 @@
     voided: IPreference[];
   }
 
+  let {
+    productOrder = [],
+  }: {
+    /** 产品探索实例里排的产品先后；没排过的产品按名字排在后面 */
+    productOrder?: string[];
+  } = $props();
+
   let list = $state<ILessonList | null>(null);
   let errorText = $state<string | null>(null);
 
   const groups = $derived(list === null ? [] : groupPreferences(list));
 
-  /** 按机器、产品分组，产品按名字排；组内新的在前 */
+  /** 产品在 productOrder 里的位置；不在里面的排在最后 */
+  function rankOf(product: string): number {
+    const index = productOrder.indexOf(product);
+    return index < 0 ? Infinity : index;
+  }
+
+  /** 按机器、产品分组，产品按你排的先后、再按名字；组内新的在前 */
   function groupPreferences(data: ILessonList): IPreferenceGroup[] {
     // 旧版 hub 没有这两个字段
     const preferences = data.preferences ?? [];
@@ -40,6 +54,7 @@
       if (group === undefined) {
         group = {
           key,
+          product: preference.product,
           title: isMultiMachine ? `${preference.product}（${preference.machineId}）` : preference.product,
           limit: limits.find((item) => item.machineId === preference.machineId)?.limit ?? null,
           active: [],
@@ -49,7 +64,9 @@
       }
       (preference.status === 'active' ? group.active : group.voided).push(preference);
     }
-    return [...result.values()].sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+    return [...result.values()].sort(
+      (a, b) => rankOf(a.product) - rankOf(b.product) || a.title.localeCompare(b.title, 'zh-CN'),
+    );
   }
 
   /** 加载偏好（和经验一个接口） */

@@ -136,6 +136,13 @@ export interface IRunDetail extends IRunBase {
   events: IEvent[];
 }
 
+/** 产品探索里一个产品的想法上限，按产品名对应 PROJECTS.md 的「产品」表 */
+export interface IProductLimit {
+  name: string;
+  /** 这个产品最多几条没处理的想法，满了探索就跳过它 */
+  ideaLimit: number;
+}
+
 /** 实例：流程类型 + 仓库 + 开发分支 + 调度 */
 export interface IInstance {
   id: string;
@@ -155,8 +162,13 @@ export interface IInstance {
   /** 上次 review 到的提交；代码清理没有，恒为 null */
   cursor: string | null;
   checks: string[];
-  /** 产品探索：每个产品最多几条没处理的想法；别的流程为 null */
+  /** 产品探索：没单独设上限的产品（PROJECTS.md 里新加的）最多几条没处理的想法；别的流程为 null */
   ideaLimit: number | null;
+  /**
+   * 产品探索：PROJECTS.md 里的全部产品，按你排的先后，带各自的想法上限；
+   * 别的流程为 null，旧版 agentd 没报时也为 null，旧版 hub 没有这个字段
+   */
+  products?: IProductLimit[] | null;
   /** 产品探索：主审能不能上网；别的流程为 null */
   isWebEnabled: boolean | null;
   lastRun: { id: string; status: RunStatus; summary: string | null; reason: string | null; queuedAt: string; finishedAt: string | null } | null;
@@ -298,8 +310,15 @@ export interface IIdea {
 export interface IIdeaList {
   /** 没处理的全部，已处理的只有最近一部分 */
   ideas: IIdea[];
-  /** 各产品探索实例每个产品没处理想法的上限 */
-  limits: { machineId: string; instanceId: string; ideaLimit: number }[];
+  /** 各产品探索实例的想法上限与产品的先后 */
+  limits: {
+    machineId: string;
+    instanceId: string;
+    /** 没单独设上限的产品用这个 */
+    ideaLimit: number;
+    /** 全部产品按你排的先后，带各自的上限；旧版 agentd 没报时为空数组，旧版 hub 没有这个字段 */
+    products?: IProductLimit[];
+  }[];
 }
 
 /** 处理想法时备注的上限，与 hub、agentd 一致 */
@@ -367,8 +386,10 @@ export type CommandInput =
         maxRounds?: number;
         /** null 表示改回跟随全局 */
         models?: Partial<Record<Role, string | null>>;
-        /** 产品探索：每个产品最多几条没处理的想法 */
+        /** 产品探索：没单独设上限的产品最多几条没处理的想法 */
         ideaLimit?: number;
+        /** 产品探索：各产品的先后和各自的上限，整张替换 */
+        products?: IProductLimit[];
         /** 产品探索：主审能不能上网 */
         isWebEnabled?: boolean;
       };

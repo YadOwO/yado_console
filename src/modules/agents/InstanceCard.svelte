@@ -24,6 +24,8 @@
 
   let isEditing = $state(false);
   const isSeries = $derived(SERIES_FLOWS.has(instance.flowType));
+  /** 产品探索各产品的想法上限；旧版 agentd 只有一个统一的上限 */
+  const ideaLimits = $derived(instance.products?.map((item) => item.ideaLimit) ?? (instance.ideaLimit === null ? [] : [instance.ideaLimit]));
 
   /** 发一条针对这个实例的指令，成功后让上层刷新 */
   async function act(input: CommandInput, label: string): Promise<void> {
@@ -61,7 +63,11 @@
       · 下次 <time datetime={instance.nextRunAt} title={formatFullTime(instance.nextRunAt)}>{formatTime(instance.nextRunAt)}</time>
     {/if}
     {#if instance.flowType === EXPLORE_FLOW}
-      {#if instance.ideaLimit !== null}· 每个产品最多 {instance.ideaLimit} 条想法{/if}
+      {#if ideaLimits.length > 0}
+        {@const min = Math.min(...ideaLimits)}
+        {@const max = Math.max(...ideaLimits)}
+        · 每个产品最多 {min === max ? min : `${min}～${max}`} 条想法
+      {/if}
       {#if instance.isWebEnabled === true}· 可以上网{/if}
     {:else if instance.flowType !== IMPLEMENT_FLOW}· 最多 {instance.maxRounds} 轮{/if}
     <!-- 代码清理没有「review 到哪」，cursor 恒为 null -->

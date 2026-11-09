@@ -2,7 +2,7 @@
   /**
    * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳还是丢弃，都可以写一句备注。放在产品探索的流程页里。
    *
-   * 按产品分组，组标题显示没处理的条数与上限；满了的产品下次探索会跳过，处理掉一条才会再想。
+   * 按产品分组、按你在实例设置里排的先后，组标题显示没处理的条数与这个产品的上限；满了的产品下次探索会跳过，处理掉一条才会再想。
    * 采纳只是记下来，不会开工：要做的话在 Mac 上用 /yado-implement I<编号> 接着聊。
    * 你的处理和备注，主审下次探索前会看，可能总结成「产品偏好」（同一页下面）。
    * 已处理的收在每组下面，只有最近一部分。处理都是发指令给 Mac。
@@ -19,8 +19,10 @@
   interface IIdeaGroup {
     key: string;
     title: string;
-    /** 每个产品没处理想法的上限；实例已删或旧版 agentd 时为 null */
+    /** 这个产品没处理想法的上限；实例已删或旧版 agentd 时为 null */
     limit: number | null;
+    /** 在实例设置里排的先后；没排过（旧版 agentd、PROJECTS.md 里已经没有的产品）时为 null */
+    rank: number | null;
     open: IIdea[];
     decided: IIdea[];
   }
@@ -45,7 +47,10 @@
     return `${idea.machineId}/${idea.id}`;
   }
 
-  /** 按机器、实例、产品分组，产品按名字排；没处理的旧的在前，已处理的新处理的在前 */
+  /**
+   * 按机器、实例、产品分组。产品按你排的先后，没排过的放后面，其中有没处理的在前、再按名字；
+   * 组内没处理的旧的在前，已处理的新处理的在前。
+   */
   function groupIdeas(data: IIdeaList): IIdeaGroup[] {
     const instanceCount = new Set(data.ideas.map((idea) => `${idea.machineId}/${idea.instanceId}`)).size;
     const result = new Map<string, IIdeaGroup>();
@@ -54,10 +59,13 @@
       let group = result.get(key);
       if (group === undefined) {
         const limit = data.limits.find((item) => item.machineId === idea.machineId && item.instanceId === idea.instanceId);
+        // 旧版 hub 没有 products；旧版 agentd 报的是空数组
+        const rank = limit?.products?.findIndex((item) => item.name === idea.product) ?? -1;
         group = {
           key,
           title: instanceCount > 1 ? `${idea.product}（${idea.instanceId}）` : idea.product,
-          limit: limit?.ideaLimit ?? null,
+          limit: limit?.products?.[rank]?.ideaLimit ?? limit?.ideaLimit ?? null,
+          rank: rank < 0 ? null : rank,
           open: [],
           decided: [],
         };
@@ -69,9 +77,11 @@
       group.open.sort((a, b) => a.id - b.id);
       group.decided.sort((a, b) => (b.decidedAt ?? '').localeCompare(a.decidedAt ?? ''));
     }
-    // 有没处理的产品在前
     return [...result.values()].sort(
-      (a, b) => Number(b.open.length > 0) - Number(a.open.length > 0) || a.title.localeCompare(b.title, 'zh-CN'),
+      (a, b) =>
+        (a.rank ?? Infinity) - (b.rank ?? Infinity) ||
+        Number(b.open.length > 0) - Number(a.open.length > 0) ||
+        a.title.localeCompare(b.title, 'zh-CN'),
     );
   }
 

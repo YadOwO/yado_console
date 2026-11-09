@@ -48,6 +48,8 @@
   const instances = $derived((overview?.instances ?? []).filter((item) => item.flowType === flowType));
   const isSeries = $derived(SERIES_FLOWS.has(flowType));
   const title = $derived(flowTitle(machines, flowType));
+  /** 产品探索：实例设置里排的产品先后，产品偏好跟着这个排 */
+  const productOrder = $derived(instances.flatMap((item) => item.products ?? []).map((item) => item.name));
   /** 运行列表里实例显示成仓库名 */
   const instanceLabels = $derived(Object.fromEntries(instances.map((item) => [item.id, instanceLabel(item)])));
 
@@ -183,7 +185,7 @@
 
     {#if flowType === EXPLORE_FLOW}
       <IdeaList />
-      <Preferences />
+      <Preferences {productOrder} />
     {/if}
 
     <div class="section-header">

@@ -5,7 +5,8 @@
    * 新建：选机器、流程、仓库与开发分支、调度；换流程时按它的默认调度预填。复审通过的修复、重构会直接推到开发分支。
    * 在流程页里新建时流程已经定了（fixedFlowType），不再让选。
    * 修改：只把改动过的字段发给 Mac。「允许推到会触发部署的分支」只能在 Mac 上改，这里不提供。
-   * 挂系列文件夹的流程（一次实现、产品探索）只能在 Mac 上建，没有开发分支；产品探索可以改想法上限和能不能上网。
+   * 挂系列文件夹的流程（一次实现、产品探索）只能在 Mac 上建，没有开发分支。
+   * 产品探索可以排产品的先后、改每个产品各自的想法上限（旧版 agentd 只有一个统一的上限），以及能不能上网。
    */
   import { untrack } from 'svelte';
 
@@ -19,6 +20,7 @@
     SERIES_FLOWS,
     type IInstance,
     type IMachine,
+    type IProductLimit,
     type Role,
     type Schedule,
     type UpdateInstancePayload,
@@ -74,6 +76,10 @@
     fixer: initial?.models.fixer ?? '',
   });
   let ideaLimit = $state(initial?.ideaLimit ?? 3);
+  /** 产品探索：Mac 报了全部产品时可以按产品排先后、改上限；旧版 agentd 或 hub 没报时只能改统一的上限 */
+  const hasProductLimits = initial?.products !== undefined && initial.products !== null;
+  /** 产品探索各产品的先后和上限，数组顺序就是先后 */
+  let products = $state<IProductLimit[]>(initial?.products?.map((item) => ({ ...item })) ?? []);
   let isWebEnabled = $state(initial?.isWebEnabled ?? false);
   let errorText = $state<string | null>(null);
 
@@ -126,6 +132,22 @@
     }
   }
 
+  /** 把第 index 个产品往前（-1）或往后（1）挪一位 */
+  function moveProduct(index: number, offset: -1 | 1): void {
+    const item = products[index];
+    const other = products[index + offset];
+    if (item === undefined || other === undefined) {
+      return;
+    }
+    products[index] = other;
+    products[index + offset] = item;
+  }
+
+  /** 想法上限是否在允许的范围内 */
+  function isValidIdeaLimit(value: number): boolean {
+    return Number.isInteger(value) && value >= 1 && value <= IDEA_LIMIT_MAX;
+  }
+
   /** 时区选项：北京时间、本机时区，以及实例当前用的时区 */
   const timezones = $derived(
     [...new Set(['Asia/Shanghai', BROWSER_TIMEZONE, timezone])].map((value) => ({
@@ -163,6 +185,12 @@
     if (current.ideaLimit !== null && ideaLimit !== current.ideaLimit) {
       patch.ideaLimit = ideaLimit;
     }
+    // 先后和上限整张发过去：排过先后或改过任何一个产品的上限都算改动
+    const toPlain = (items: IProductLimit[]): IProductLimit[] => items.map((item) => ({ name: item.name, ideaLimit: item.ideaLimit }));
+    const nextProducts = toPlain(products);
+    if (hasProductLimits && JSON.stringify(nextProducts) !== JSON.stringify(toPlain(current.products ?? []))) {
+      patch.products = nextProducts;
+    }
     if (current.isWebEnabled !== null && isWebEnabled !== current.isWebEnabled) {
       patch.isWebEnabled = isWebEnabled;
     }
@@ -192,7 +220,7 @@
       errorText = '请填写开发分支';
       return;
     }
-    if (isExplore && (!Number.isInteger(ideaLimit) || ideaLimit < 1 || ideaLimit > IDEA_LIMIT_MAX)) {
+    if (isExplore && (!isValidIdeaLimit(ideaLimit) || products.some((item) => !isValidIdeaLimit(item.ideaLimit)))) {
       errorText = `想法上限要在 1～${IDEA_LIMIT_MAX} 之间`;
       return;
     }
@@ -301,6 +329,51 @@
     <p class="hint">{createHint}</p>
   {:else}
     {#if isExplore}
+    {#if hasProductLimits}
+    <div class="field field-top">
+      <span>产品与上限</span>
+      {#if products.length === 0}
+        <span class="muted">PROJECTS.md 的「产品」表里还没有产品</span>
+      {:else}
+        <ol class="products">
+          {#each products as product, index (product.name)}
+            <li class="product">
+              <span class="product-rank muted">{index + 1}</span>
+              <span class="product-name">{product.name}</span>
+              <span class="product-limit">
+                <input
+                  class="tiny"
+                  type="number"
+                  min="1"
+                  max={IDEA_LIMIT_MAX}
+                  bind:value={product.ideaLimit}
+                  aria-label="{product.name}最多几条没处理的想法"
+                />
+                <span class="muted">条</span>
+              </span>
+              <span class="product-move">
+                <button
+                  class="btn btn-icon"
+                  type="button"
+                  disabled={index === 0}
+                  aria-label="{product.name}往前挪"
+                  onclick={() => moveProduct(index, -1)}>↑</button
+                >
+                <button
+                  class="btn btn-icon"
+                  type="button"
+                  disabled={index === products.length - 1}
+                  aria-label="{product.name}往后挪"
+                  onclick={() => moveProduct(index, 1)}>↓</button
+                >
+              </span>
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    </div>
+    <p class="hint">从上到下是想法页和探索的先后；没处理的想法到了上限，这个产品就跳过。PROJECTS.md 里新加的产品排最后，先按 {ideaLimit} 条。</p>
+    {:else}
     <label class="field">
       <span>想法上限</span>
       <span class="inline">
@@ -309,6 +382,7 @@
       </span>
     </label>
     <p class="hint">没处理的想法到了上限，这个产品就跳过，处理掉一条才会再想。</p>
+    {/if}
     <div class="field">
       <span>上网调研</span>
       <div class="segmented" role="group" aria-label="上网调研">
@@ -383,6 +457,62 @@
 
   .narrow {
     width: 80px;
+  }
+
+  /* 内容比一行高的字段，标题和第一行对齐 */
+  .field-top {
+    align-items: start;
+  }
+
+  .field-top > span:first-child {
+    line-height: 32px;
+  }
+
+  .products {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .product {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .product-rank {
+    flex-shrink: 0;
+    width: 16px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .product-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .product-limit,
+  .product-move {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .tiny {
+    width: 56px;
+  }
+
+  .btn-icon {
+    width: 32px;
+    padding: 0;
   }
 
   .hint {
