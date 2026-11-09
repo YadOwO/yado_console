@@ -96,7 +96,6 @@ interface IRunBase {
   flowType: string;
   status: RunStatus;
   trigger: string;
-  isDryRun: boolean;
   baseCommit: string | null;
   headCommit: string | null;
   pushedCommit: string | null;
@@ -147,8 +146,6 @@ export interface IInstance {
   schedule: Schedule;
   scheduleText: string;
   isEnabled: boolean;
-  /** 演练模式：只出报告，不推送 */
-  isDryRun: boolean;
   /** 是否允许推到会触发部署的分支；只能在 Mac 上改 */
   allowProtectedBranch: boolean;
   maxRounds: number;
@@ -367,7 +364,6 @@ export type CommandInput =
         branch?: string;
         schedule?: Schedule;
         isEnabled?: boolean;
-        isDryRun?: boolean;
         maxRounds?: number;
         /** null 表示改回跟随全局 */
         models?: Partial<Record<Role, string | null>>;

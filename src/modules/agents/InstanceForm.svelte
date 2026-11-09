@@ -2,7 +2,7 @@
   /**
    * 新建或修改实例。
    *
-   * 新建：选机器、流程、仓库与开发分支、调度；换流程时按它的默认调度预填。新实例一律是演练模式，看过结果再改成推送。
+   * 新建：选机器、流程、仓库与开发分支、调度；换流程时按它的默认调度预填。复审通过的修复、重构会直接推到开发分支。
    * 在流程页里新建时流程已经定了（fixedFlowType），不再让选。
    * 修改：只把改动过的字段发给 Mac。「允许推到会触发部署的分支」只能在 Mac 上改，这里不提供。
    * 挂系列文件夹的流程（一次实现、产品探索）只能在 Mac 上建，没有开发分支；产品探索可以改想法上限和能不能上网。
@@ -66,7 +66,6 @@
   let timezone = $state('timezone' in initialSchedule ? initialSchedule.timezone : 'Asia/Shanghai');
   let minutes = $state(initialSchedule.kind === 'interval' ? initialSchedule.minutes : 60);
   let expression = $state(initialSchedule.kind === 'cron' ? initialSchedule.expression : '0 18 * * *');
-  let isDryRun = $state(initial?.isDryRun ?? true);
   let maxRounds = $state(initial?.maxRounds ?? 2);
   /** 各角色单独指定的模型；空字符串表示跟随全局 */
   let models = $state<Record<Role, string>>({
@@ -80,25 +79,23 @@
 
   /** 代码清理：每周挑改得多的文件做不改行为的重构，没有「review 到哪」 */
   const isCleanup = $derived(flowType === 'cleanup');
-  /** 一次实现：调度固定只手动，在 Mac 上用 agentctl 提需求；只推新分支，没有演练模式和轮数 */
+  /** 一次实现：调度固定只手动，在 Mac 上用 agentctl 提需求；只推新分支，没有轮数 */
   const isImplement = $derived(flowType === IMPLEMENT_FLOW);
-  /** 产品探索：只出想法，不改代码，没有演练模式和轮数 */
+  /** 产品探索：只出想法，不改代码，没有轮数 */
   const isExplore = $derived(flowType === EXPLORE_FLOW);
   /** 挂系列文件夹：没有开发分支，只能在 Mac 上建 */
   const isSeries = $derived(SERIES_FLOWS.has(flowType));
   /** 这个流程用到的角色，只给它们选模型 */
   const roles = $derived(ROLES.filter(({ role }) => (FLOW_ROLES[flowType] ?? [role]).includes(role)));
-  /** 推送的是什么：review 推修复，代码清理推重构 */
-  const changeNoun = $derived(isCleanup ? '重构' : '修复');
   /** 新建时的说明 */
   const createHint = $derived(
     isSeries
       ? `挂本机的系列文件夹，只能在 Mac 上用 agentctl instance add ${flowType} <文件夹> 建。`
       : isCleanup
-      ? '每周挑最近改得多的几个文件做不改行为的小重构。新实例是演练模式：只出报告不推送，看过结果再改成推送。'
+      ? '每周挑最近改得多的几个文件做不改行为的小重构。复审通过的重构会直接推到开发分支。'
       : flowType === 'review'
-        ? '新实例是演练模式：只出报告不推送，看过结果再改成推送。从现在的最新提交开始 review。'
-        : '新实例是演练模式：只出报告不推送，看过结果再改成推送。',
+        ? '复审通过的修复会直接推到开发分支。从现在的最新提交开始 review。'
+        : '复审通过的修复会直接推到开发分支。',
   );
 
   /** 某台机器上某种流程的默认调度；旧版 agentd 没报时为 null */
@@ -151,20 +148,14 @@
     return { kind: 'cron', expression: expression.trim(), timezone };
   }
 
-  /** 只收集改动过的字段；用户取消切换到推送时返回 null */
-  function buildPatch(current: IInstance, schedule: Schedule): UpdateInstancePayload | null {
+  /** 只收集改动过的字段 */
+  function buildPatch(current: IInstance, schedule: Schedule): UpdateInstancePayload {
     const patch: UpdateInstancePayload = { id: current.id };
     if (branch.trim() !== current.branch) {
       patch.branch = branch.trim();
     }
     if (JSON.stringify(schedule) !== JSON.stringify(current.schedule)) {
       patch.schedule = schedule;
-    }
-    if (isDryRun !== current.isDryRun) {
-      if (!isDryRun && !confirm(`改成推送后，复审通过的${changeNoun}会直接推到 ${branch.trim()}。确定吗？`)) {
-        return null;
-      }
-      patch.isDryRun = isDryRun;
     }
     if (maxRounds !== current.maxRounds) {
       patch.maxRounds = maxRounds;
@@ -220,9 +211,6 @@
       );
     } else {
       const patch = buildPatch(initial, schedule);
-      if (patch === null) {
-        return;
-      }
       if (Object.keys(patch).length === 1) {
         onClose();
         return;
@@ -330,14 +318,6 @@
     </div>
     <p class="hint">打开后主审可以上网查竞品、平台规则这类资料。</p>
     {:else if !isImplement}
-    <div class="field">
-      <span>模式</span>
-      <div class="segmented" role="group" aria-label="模式">
-        <button type="button" aria-pressed={isDryRun} onclick={() => (isDryRun = true)}>演练</button>
-        <button type="button" aria-pressed={!isDryRun} onclick={() => (isDryRun = false)}>推送</button>
-      </div>
-    </div>
-    <p class="hint">演练只出报告；推送会把复审通过的{changeNoun}直接推到开发分支。</p>
     <label class="field">
       <span>最多几轮</span>
       <input class="narrow" type="number" min="1" max="5" bind:value={maxRounds} />

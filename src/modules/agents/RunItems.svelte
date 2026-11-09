@@ -34,7 +34,6 @@
           <span class={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
           {#if flowTitles !== null}<span class="tag">{flowTitles[run.flowType] ?? run.flowType}</span>{/if}
           <span class="instance">{instanceLabels[run.instanceId] ?? run.instanceId}</span>
-          {#if run.isDryRun}<span class="tag">演练</span>{/if}
           <time class="muted time" datetime={run.queuedAt} title={formatFullTime(run.queuedAt)}>
             {timeText(run)}
           </time>

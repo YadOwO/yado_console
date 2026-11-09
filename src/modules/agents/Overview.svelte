@@ -38,8 +38,8 @@
     nextRunAt: string | null;
     /** 全部实例里最近的一次运行 */
     last: { instance: IInstance; run: NonNullable<IInstance['lastRun']> } | null;
-    /** 卡头的模式标记：推送 / 演练 / 推新分支 / 只出想法 */
-    badge: { label: string; tone: string } | null;
+    /** 卡头的模式标记：推送 / 推新分支 / 只出想法 */
+    badge: { label: string; tone: string };
   }
 
   let overview = $state<IOverview | null>(null);
@@ -51,19 +51,15 @@
   const ideaCount = $derived(adminStatus.value?.agentIdeaCount ?? 0);
   const cards = $derived(overview === null ? [] : buildCards(overview));
 
-  /** 卡头的模式标记 */
-  function badgeOf(flow: IFlow, instances: IInstance[]): IFlowCard['badge'] {
+  /** 卡头的模式标记：review、代码清理复审通过就推到开发分支 */
+  function badgeOf(flow: IFlow): IFlowCard['badge'] {
     if (flow.type === IMPLEMENT_FLOW) {
       return { label: '推新分支', tone: 'resolved' };
     }
     if (flow.type === EXPLORE_FLOW) {
       return { label: '只出想法', tone: 'info' };
     }
-    const enabled = instances.filter((item) => item.isEnabled);
-    if (enabled.length === 0) {
-      return null;
-    }
-    return enabled.some((item) => !item.isDryRun) ? { label: '推送', tone: 'resolved' } : { label: '演练', tone: 'info' };
+    return { label: '推送', tone: 'resolved' };
   }
 
   /** 按机器报上来的流程类型（保持 agentd 的顺序）汇总各自的实例 */
@@ -88,7 +84,7 @@
           last = { instance, run: instance.lastRun };
         }
       }
-      return { flow, instances, nextRunAt: nextRuns[0] ?? null, last, badge: badgeOf(flow, instances) };
+      return { flow, instances, nextRunAt: nextRuns[0] ?? null, last, badge: badgeOf(flow) };
     });
   }
 
@@ -193,7 +189,7 @@
             <div class="flow-head">
               <h2>{card.flow.title}</h2>
               {#if card.flow.isPaused}<span class="status status-neutral">已暂停</span>{/if}
-              {#if card.badge !== null}<span class="status status-{card.badge.tone}">{card.badge.label}</span>{/if}
+              <span class="status status-{card.badge.tone}">{card.badge.label}</span>
               <span class="arrow" aria-hidden="true">→</span>
             </div>
             <p class="flow-desc">{card.flow.description}</p>

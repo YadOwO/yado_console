@@ -40,7 +40,7 @@
   }
 </script>
 
-<article class="instance" class:paused={!instance.isEnabled} class:live={instance.isEnabled && !instance.isDryRun} class:dry={instance.isEnabled && instance.isDryRun}>
+<article class="instance" class:paused={!instance.isEnabled} class:live={instance.isEnabled}>
   <div class="instance-head">
     <span class="repo">{instance.repo}</span>
     {#if !isSeries}<span class="tag">{instance.branch}</span>{/if}
@@ -51,7 +51,7 @@
       {:else if instance.flowType === EXPLORE_FLOW}
         <span class="status status-info">只出想法</span>
       {:else}
-        <span class="status {instance.isDryRun ? 'status-info' : 'status-resolved'}">{instance.isDryRun ? '演练' : '推送'}</span>
+        <span class="status status-resolved">推送</span>
       {/if}
     </span>
   </div>
@@ -142,7 +142,7 @@
     box-shadow: var(--shadow-md);
   }
 
-  /* 左侧色条：绿=推送、蓝=演练、灰=暂停，扫一眼就知道实例现在怎么跑 */
+  /* 左侧色条：绿=启用、灰=暂停，扫一眼就知道实例现在跑不跑 */
   .instance::before {
     position: absolute;
     top: 14px;
@@ -156,10 +156,6 @@
 
   .instance.live::before {
     background: var(--resolved);
-  }
-
-  .instance.dry::before {
-    background: var(--info);
   }
 
   .instance.paused::before {

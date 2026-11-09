@@ -132,7 +132,6 @@
       <div class="title-row">
         <h1>{run.instanceId}</h1>
         <span class={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
-        {#if run.isDryRun}<span class="tag">演练</span>{/if}
         {#if isRunActive(run.status)}
           <button class="btn danger" type="button" disabled={commandState.isBusy} onclick={() => void cancel()}>取消</button>
         {/if}
@@ -161,7 +160,7 @@
         <dd class="mono">{shortSha(run.baseCommit)}..{shortSha(run.headCommit)}</dd>
       {/if}
       <dt>推送</dt>
-      <dd class:mono={run.pushedCommit !== null}>{run.pushedCommit === null ? (run.isDryRun ? '演练不推送' : '没有推送') : shortSha(run.pushedCommit)}</dd>
+      <dd class:mono={run.pushedCommit !== null}>{run.pushedCommit === null ? '没有推送' : shortSha(run.pushedCommit)}</dd>
       <dt>tokens</dt>
       <dd>输入 {compactNumber(run.inputTokens)} · 输出 {compactNumber(run.outputTokens)}</dd>
     </dl>
