@@ -7,8 +7,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-/** 体积预算（字节，gzip 后） */
-const BUDGET = { js: 60 * 1024, css: 8 * 1024 };
+/**
+ * 体积预算（字节，gzip 后）。
+ * JS 2026-11-09 经维护者同意从 60 KB 放宽到 80 KB：加完「采纳并开工」只剩 3 字节，再做小功能就会超。
+ * 每个小功能大约 0.2～1 KB；80 KB 够做几十个，但不小心引进一个大库（常见 10～50 KB）时仍会拦住。
+ */
+const BUDGET = { js: 80 * 1024, css: 8 * 1024 };
 
 /** 构建产物目录 */
 const ASSETS_DIR = 'dist/assets';

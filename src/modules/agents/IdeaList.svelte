@@ -1,9 +1,10 @@
 <script lang="ts">
   /**
-   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳还是丢弃，都可以写一句备注。放在产品探索的流程页里。
+   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳并开工还是丢弃，都可以写一句备注。放在产品探索的流程页里。
    *
    * 按产品分组、按你在实例设置里排的先后，组标题显示没处理的条数与这个产品的上限；满了的产品下次探索会跳过，处理掉一条才会再想。
-   * 采纳只是记下来，不会开工：要做的话在 Mac 上用 /yado-implement I<编号> 接着聊。
+   * 采纳并开工：Mac 把想法加备注交给同一个系列的一次实现，做完推到新分支、进待办；已处理的那条能点进那次运行。
+   * 想先聊清楚的，在 Mac 上用 /yado-implement I<编号>。
    * 你的处理和备注，主审下次探索前会看，可能总结成「产品偏好」（同一页下面）。
    * 已处理的收在每组下面，只有最近一部分。处理都是发指令给 Mac。
    */
@@ -12,7 +13,7 @@
   import { refreshAdminStatus } from '../../lib/admin-status.svelte';
   import { formatDate, formatFullTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
-  import { getIdeas, IDEA_NOTE_MAX, IDEA_SIZE_LABEL, type IIdea, type IIdeaList } from './api';
+  import { getIdeas, IDEA_NOTE_MAX, IDEA_SIZE_LABEL, type CommandInput, type IIdea, type IIdeaList } from './api';
   import { commandState, performCommand } from './command.svelte';
 
   /** 一组想法：某个产品探索实例下的一个产品 */
@@ -27,10 +28,10 @@
     decided: IIdea[];
   }
 
-  /** 处理方式 */
+  /** 处理方式：adopted 是采纳并开工 */
   type Decision = 'adopted' | 'discarded';
 
-  const DECISION_LABEL: Record<Decision, string> = { adopted: '采纳', discarded: '丢弃' };
+  const DECISION_LABEL: Record<Decision, string> = { adopted: '采纳并开工', discarded: '丢弃' };
 
   let list = $state<IIdeaList | null>(null);
   let isLoading = $state(true);
@@ -103,14 +104,16 @@
     note = '';
   }
 
-  /** 采纳或丢弃，带上备注 */
+  /** 采纳并开工或丢弃，带上备注 */
   async function decide(idea: IIdea, decision: Decision): Promise<void> {
     const text = note.trim();
-    const payload: { id: number; decision: Decision; note?: string } = { id: idea.id, decision };
+    const payload: { id: number; note?: string } = { id: idea.id };
     if (text !== '') {
       payload.note = text;
     }
-    if (await performCommand(idea.machineId, { type: 'idea.decide', payload }, `${DECISION_LABEL[decision]} I${idea.id}`)) {
+    const command: CommandInput =
+      decision === 'adopted' ? { type: 'idea.implement', payload } : { type: 'idea.decide', payload: { ...payload, decision } };
+    if (await performCommand(idea.machineId, command, `${DECISION_LABEL[decision]} I${idea.id}`)) {
       deciding = null;
       await load();
       refreshAdminStatus().catch(() => undefined);
@@ -202,9 +205,12 @@
                   bind:value={note}
                   rows="2"
                   maxlength={IDEA_NOTE_MAX}
-                  placeholder={decision === 'adopted' ? '备注（可选）：比如回答上面的问题、先做哪部分' : '备注（可选）：为什么不做，主审以后会参考'}
+                  placeholder={decision === 'adopted' ? '备注（可选）：会写进需求' : '备注（可选）：为什么不做，主审以后会参考'}
                   aria-label="备注"
                 ></textarea>
+                {#if decision === 'adopted' && idea.questions.length > 0}
+                  <p class="muted hint">先在备注里回答上面的问题，没回答的按最稳妥的做法定</p>
+                {/if}
                 <div class="actions">
                   <button class="btn" type="button" onclick={() => (deciding = null)}>取消</button>
                   <button
@@ -224,9 +230,8 @@
                 <button
                   class="btn btn-primary"
                   type="button"
-                  title="只是记下来，不会开工；要做的话在 Mac 上用 /yado-implement I{idea.id}"
                   disabled={commandState.isBusy}
-                  onclick={() => openDecide(idea, 'adopted')}>采纳</button
+                  onclick={() => openDecide(idea, 'adopted')}>采纳并开工</button
                 >
               </div>
             {/if}
@@ -252,7 +257,10 @@
                     </summary>
                     <div class="done-body">
                       {#if idea.note !== null}<p class="note-text">备注：{idea.note}</p>{/if}
-                      {#if idea.status === 'adopted'}
+                      {#if idea.implementRunId}
+                        <p class="hint"><a href="/agents/runs/{idea.machineId}/{idea.implementRunId}">已开工，看这次实现</a></p>
+                      {:else if idea.status === 'adopted'}
+                        <!-- 以前只采纳、没开工的 -->
                         <p class="muted hint">要做的话在 Mac 上用 <span class="mono">/yado-implement I{idea.id}</span></p>
                       {/if}
                       {@render body(idea)}
@@ -266,7 +274,7 @@
       </div>
     {/each}
     <p class="muted footnote">
-      采纳不会开工，要做的话在 Mac 上用 <span class="mono">/yado-implement I编号</span>。你的处理和备注，主审下次探索前会看，可能总结成下面的「产品偏好」。
+      采纳并开工交给 Mac 上的一次实现，做完进待办；想先聊清楚的，用 <span class="mono">/yado-implement I编号</span>。你的处理和备注，主审下次探索前会看，可能总结成下面的「产品偏好」。
     </p>
   {/if}
 </div>
@@ -496,6 +504,11 @@
   .hint,
   .footnote {
     font-size: 12px;
+  }
+
+  /* 已开工的那条：点进一次实现的运行 */
+  .hint a {
+    text-decoration: underline;
   }
 
   @media (max-width: 720px) {

@@ -21,8 +21,9 @@
 - **不用组件库，不用路由库**：样式手写，路由是基于 History API 的几十行代码。
 - **系统字体**，不加载网络字体；时间格式化用浏览器内置的 `Intl`。
 - **唯一的运行时依赖是 `@logto/browser`**，也就是 Logto 官方 SDK。
-- **体积预算**：`pnpm build` 后自动检查，JS ≤ 60 KB、CSS ≤ 8 KB（gzip 后），超出就构建失败。
+- **体积预算**：`pnpm build` 后自动检查，JS ≤ 80 KB、CSS ≤ 8 KB（gzip 后），超出就构建失败。
   第一版实测 JS 36 KB、CSS 2.3 KB，其中大部分是 Logto SDK；加上 Agent 后 JS 47 KB、CSS 3.7 KB。
+  2026-11-09 加完「采纳并开工」时 JS 到了 60 KB 的上限，经维护者同意放宽到 80 KB（原因见 `scripts/check-size.mjs`）。
 - **缓存**：
   - 带哈希的资源缓存一年，`index.html` 每次都向服务器确认；
   - 构建时预压缩 `.gz`，nginx 直接发送。
