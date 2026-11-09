@@ -5,7 +5,8 @@
    * 问题可以选「不修」（加进不修清单，以后同样的问题不再提）、「已处理」（你自己改了或决定不管），
    * 或「交给主审」：Mac 上另开一次运行，主审看最新代码在修和不修里选一个，可以先补充一段信息给它。
    * 一次实现做完的新功能（运行状态为成功）：选「不合」（feat 分支留着）、「合」（Mac 上合进开发分支）或「交给主审」（主审判合不合）。
-   * 其他运行只能「知道了」。
+   * 停下来的一次实现（Mac 判断能交给主审的，canDelegate）：「知道了」或「交给主审」，主审看停下的原因定处理办法，
+   * 实现者照着改，都通过就推 feat 分支、作为新功能回到待办。其他运行只能「知道了」。
    * 等你点头的运行（发布计划待确认、发布要你确认）：看全文，同意或拒绝，可以写备注；页面不能改计划和命令。
    * 处理都是发指令给 Mac，成功后从列表里消失。
    */
@@ -26,6 +27,11 @@
     '主审会看最新代码，在修和不修里选一个，不会再交回给你。选了修就照常修复、复审，通过了就推到开发分支；' +
     '选了不修就加进不修清单。结果在运行记录里看。';
 
+  /** 停下来的一次实现「交给主审」的说明 */
+  const RESCUE_DELEGATE_HINT =
+    '主审看停下的原因和现在的代码，定怎么接着做完，实现者照着改；都通过就推到 feat 分支，作为新功能回到待办。' +
+    '主审处理不了会说明要你做什么，再回到待办。';
+
   /** 新功能「交给主审」的说明 */
   const MERGE_DELEGATE_HINT =
     '主审看需求、重点关注和改动，只判合不合，不做代码 review。判合就合进开发分支；判不合会带着理由回到待办，你再选。';
@@ -36,6 +42,27 @@
    */
   function isDoneFeature(item: IInboxItem): boolean {
     return item.kind === 'run' && item.runStatus === 'succeeded';
+  }
+
+  /** 是不是停下来、能交给主审接着做的一次实现：由 Mac 判断 */
+  function isRescuable(item: IInboxItem): boolean {
+    return item.kind === 'run' && item.runStatus === 'needs_attention' && item.canDelegate === true;
+  }
+
+  /** 「交给主审」的说明：问题、新功能、停下来的一次实现各不一样 */
+  function delegateHint(item: IInboxItem): string {
+    if (isDoneFeature(item)) {
+      return MERGE_DELEGATE_HINT;
+    }
+    return isRescuable(item) ? RESCUE_DELEGATE_HINT : DELEGATE_HINT;
+  }
+
+  /** 「交给主审」补充信息的提示 */
+  function delegatePlaceholder(item: IInboxItem): string {
+    if (isDoneFeature(item)) {
+      return '补充信息（可选）：比如你最担心哪里';
+    }
+    return isRescuable(item) ? '补充信息（可选）：比如那段内容写到哪里' : '补充信息（可选）：比如回答上面主审的问题';
   }
 
   /** 同意或拒绝后会怎样：按等你点头的种类和决定；新功能的「合」也走这里确认 */
@@ -216,12 +243,12 @@
             </div>
           {:else if delegatingId === item.id}
             <div class="delegate">
-              <p class="muted hint">{isDoneFeature(item) ? MERGE_DELEGATE_HINT : DELEGATE_HINT}</p>
+              <p class="muted hint">{delegateHint(item)}</p>
               <textarea
                 bind:value={note}
                 rows="3"
                 maxlength={DELEGATE_NOTE_MAX}
-                placeholder={isDoneFeature(item) ? '补充信息（可选）：比如你最担心哪里' : '补充信息（可选）：比如回答上面主审的问题'}
+                placeholder={delegatePlaceholder(item)}
                 aria-label="补充给主审的信息"
               ></textarea>
               <div class="actions">
@@ -279,6 +306,17 @@
                 >
                 <button class="btn btn-primary" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'approve')}
                   >合</button
+                >
+              {:else if isRescuable(item)}
+                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void resolve(item, 'done')}
+                  >知道了</button
+                >
+                <button
+                  class="btn btn-primary"
+                  type="button"
+                  title="让主审（Opus）看停下的原因，定处理办法，实现者照着改完接着推"
+                  disabled={commandState.isBusy}
+                  onclick={() => openDelegate(item)}>交给主审</button
                 >
               {:else}
                 <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void resolve(item, 'done')}

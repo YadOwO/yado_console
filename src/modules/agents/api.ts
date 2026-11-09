@@ -192,6 +192,11 @@ export interface IInboxItem {
   approvalKind: 'plan' | 'confirm' | null;
   /** 等你点头时要你看的全文（Mac 上已打码）；别的待办为 null */
   approvalText: string | null;
+  /**
+   * 能不能交给主审：问题和做完的新功能一直能；停下来的一次实现由 Mac 判断（已开始实现、代码还在、次数没用完）。
+   * 旧版 hub 不传，按 false 处理
+   */
+  canDelegate?: boolean;
   createdAt: string;
 }
 
