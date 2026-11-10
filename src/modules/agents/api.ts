@@ -316,8 +316,8 @@ export interface IIdea {
   size: IdeaSize;
   /** 要你拿主意的问题 */
   questions: string[];
-  /** open 没处理、adopted 采纳、discarded 丢弃 */
-  status: 'open' | 'adopted' | 'discarded';
+  /** open 没处理、adopted 采纳、discarded 丢弃、done 你自己实现了（没走流程） */
+  status: 'open' | 'adopted' | 'discarded' | 'done';
   /** 你处理时写的备注 */
   note: string | null;
   decidedAt: string | null;
@@ -435,9 +435,9 @@ export type CommandInput =
   // 经验只能作废、恢复；改文字和新增只能在 Mac 上用 agentctl
   | { type: 'lesson.void'; payload: { id: number } }
   | { type: 'lesson.restore'; payload: { id: number } }
-  // 产品探索：想法采纳并开工（交给同一个系列的一次实现）或丢弃，都可以写备注；偏好和经验一样只能作废、恢复
+  // 产品探索：想法采纳并开工（交给同一个系列的一次实现）、丢弃或标成已实现（你自己做了），都可以写备注；偏好和经验一样只能作废、恢复
   | { type: 'idea.implement'; payload: { id: number; note?: string } }
-  | { type: 'idea.decide'; payload: { id: number; decision: 'discarded'; note?: string } }
+  | { type: 'idea.decide'; payload: { id: number; decision: 'discarded' | 'done'; note?: string } }
   | { type: 'preference.void'; payload: { id: number } }
   | { type: 'preference.restore'; payload: { id: number } };
 

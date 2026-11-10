@@ -1,9 +1,10 @@
 <script lang="ts">
   /**
-   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳并开工还是丢弃，都可以写一句备注。放在产品探索的流程页里。
+   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳并开工、丢弃，或者自己做完了标成已实现，都可以写一句备注。放在产品探索的流程页里。
    *
    * 按产品分组、按你在实例设置里排的先后，组标题显示没处理的条数与这个产品的上限；满了的产品下次探索会跳过，处理掉一条才会再想。
    * 采纳并开工：Mac 把想法加备注交给同一个系列的一次实现，做完推到新分支、进待办；已处理的那条能点进那次运行。
+   * 已实现：你看了之后自己去做了、没走流程，只记下来，主审以后不会再提。
    * 想先聊清楚的，在 Mac 上用 /yado-implement I<编号>。
    * 你的处理和备注，主审下次探索前会看，可能总结成「产品偏好」（同一页下面）。
    * 已处理的收在每组下面，只有最近一部分。处理都是发指令给 Mac。
@@ -28,10 +29,21 @@
     decided: IIdea[];
   }
 
-  /** 处理方式：adopted 是采纳并开工 */
-  type Decision = 'adopted' | 'discarded';
+  /** 处理方式：adopted 是采纳并开工，done 是你自己做完了（没走流程） */
+  type Decision = 'adopted' | 'discarded' | 'done';
 
-  const DECISION_LABEL: Record<Decision, string> = { adopted: '采纳并开工', discarded: '丢弃' };
+  /** 按钮上的处理方式 */
+  const DECISION_LABEL: Record<Decision, string> = { adopted: '采纳并开工', discarded: '丢弃', done: '已实现' };
+
+  /** 备注框的提示：采纳并开工的备注会写进需求，其余的给主审以后参考 */
+  const NOTE_PLACEHOLDER: Record<Decision, string> = {
+    adopted: '备注（可选）：会写进需求',
+    discarded: '备注（可选）：为什么不做，主审以后会参考',
+    done: '备注（可选）：做在哪、和想法有什么不同，主审以后会参考',
+  };
+
+  /** 状态标签：已处理的列表里用 */
+  const STATUS_LABEL: Record<IIdea['status'], string> = { open: '没处理', adopted: '采纳', discarded: '丢弃', done: '已实现' };
 
   let list = $state<IIdeaList | null>(null);
   let isLoading = $state(true);
@@ -104,7 +116,7 @@
     note = '';
   }
 
-  /** 采纳并开工或丢弃，带上备注 */
+  /** 采纳并开工、丢弃或标成已实现，带上备注 */
   async function decide(idea: IIdea, decision: Decision): Promise<void> {
     const text = note.trim();
     const payload: { id: number; note?: string } = { id: idea.id };
@@ -205,7 +217,7 @@
                   bind:value={note}
                   rows="2"
                   maxlength={IDEA_NOTE_MAX}
-                  placeholder={decision === 'adopted' ? '备注（可选）：会写进需求' : '备注（可选）：为什么不做，主审以后会参考'}
+                  placeholder={NOTE_PLACEHOLDER[decision]}
                   aria-label="备注"
                 ></textarea>
                 {#if decision === 'adopted' && idea.questions.length > 0}
@@ -227,6 +239,9 @@
                 <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => openDecide(idea, 'discarded')}
                   >丢弃</button
                 >
+                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => openDecide(idea, 'done')}
+                  >已实现</button
+                >
                 <button
                   class="btn btn-primary"
                   type="button"
@@ -247,8 +262,8 @@
                   <details class="done">
                     <summary>
                       <span class="mono muted id">I{idea.id}</span>
-                      <span class="status" class:status-resolved={idea.status === 'adopted'} class:status-neutral={idea.status === 'discarded'}
-                        >{idea.status === 'adopted' ? '采纳' : '丢弃'}</span
+                      <span class="status" class:status-resolved={idea.status !== 'discarded'} class:status-neutral={idea.status === 'discarded'}
+                        >{STATUS_LABEL[idea.status]}</span
                       >
                       <span class="done-title">{idea.title}</span>
                       {#if idea.decidedAt !== null}
@@ -274,7 +289,7 @@
       </div>
     {/each}
     <p class="muted footnote">
-      采纳并开工交给 Mac 上的一次实现，做完进待办；想先聊清楚的，用 <span class="mono">/yado-implement I编号</span>。你的处理和备注，主审下次探索前会看，可能总结成下面的「产品偏好」。
+      采纳并开工交给 Mac 上的一次实现，做完进待办；想先聊清楚的，用 <span class="mono">/yado-implement I编号</span>；自己做完了的点「已实现」。你的处理和备注，主审下次探索前会看，可能总结成下面的「产品偏好」。
     </p>
   {/if}
 </div>
