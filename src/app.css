@@ -222,6 +222,24 @@ input:not([type="checkbox"]):hover {
   border-color: var(--line-strong);
 }
 
+/* 多行输入：按内容自动撑高 */
+textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 40vh;
+  padding: 8px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--field);
+  resize: vertical;
+  field-sizing: content;
+  transition: border-color 0.15s;
+}
+
+textarea:hover {
+  border-color: var(--line-strong);
+}
+
 /* 产品标签 */
 .tag {
   display: inline-block;
@@ -291,4 +309,302 @@ input:not([type="checkbox"]):hover {
   padding: 48px 16px;
   color: var(--muted);
   text-align: center;
+}
+
+/* ---------- 以下是各页面共用的版式。写新页面先在这里找现成的类，页面自己的 <style> 只写它独有的 ---------- */
+
+/* 页面外壳：居中的一栏、标题与一句说明 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 24px 80px;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 右边控件多（一排筛选、两个按钮）的页头：放不下就换到标题下面 */
+.page-header.wraps {
+  flex-wrap: wrap;
+}
+
+.page-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.page-sub {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* :where 不加权重，页面自己写了标题样式的以页面为准 */
+:where(.page) h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+:where(.page) h2 {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+:where(.page) h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* 页面左上角的返回 */
+.back {
+  font-size: 13px;
+  transition: color 0.15s;
+}
+
+.back:hover {
+  color: var(--fg);
+}
+
+.page > .back {
+  align-self: flex-start;
+}
+
+/* 小节标题一行：左边标题（.section-title 里可以跟一个 .pill），右边操作 */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* 分组标题一行：标题后面跟条数 */
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 一行里排几个小东西（状态、标签、名字），放不下就换行 */
+.inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 卡片：白底、细边、圆角；.list 是一条条用线隔开的卡片列表 */
+.card,
+.list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+}
+
+.list > li + li {
+  border-top: 1px solid var(--line);
+}
+
+/* 卡片左侧的色条，颜色跟 .tone-* 走，没给就是灰的；左边留多少空由卡片自己的 padding 定 */
+.bar {
+  position: relative;
+  overflow: hidden;
+}
+
+.bar::before {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--tone, var(--line-strong));
+  content: '';
+}
+
+.tone-resolved {
+  --tone: var(--resolved);
+}
+
+.tone-pending {
+  --tone: var(--pending);
+}
+
+.tone-danger {
+  --tone: var(--danger);
+}
+
+.tone-info {
+  --tone: var(--info);
+}
+
+.tone-muted {
+  --tone: var(--line-strong);
+}
+
+/* 灰底的条数，如「2/3」；.full 是到上限了 */
+.pill {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.pill.full {
+  background: var(--pending-bg);
+  color: var(--pending);
+}
+
+/* 橙底的待处理数：侧栏和标签上的角标 */
+.badge {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pending);
+  color: var(--on-pending);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: center;
+}
+
+.badge-small {
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* 编号，如 I3、L12 */
+.id-chip {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--chip-bg);
+  line-height: 18px;
+}
+
+.link {
+  text-decoration: underline;
+}
+
+/* 收起来的一段，如「已作废（3）」 */
+.fold > summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 一条内容下面的一排操作按钮：靠右，手机上靠左 */
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn.danger {
+  color: var(--danger);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+/* 列表页头上的一排筛选，和列表底下的「加载更多」 */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+}
+
+/* 表单：一行是「名字 + 控件」（.form-row），最下面是保存、取消（.form-actions） */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.form-row > span:first-child {
+  color: var(--muted);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* 控件后面跟一个单位或说明 */
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.narrow {
+  width: 80px;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 16px 16px 80px;
+  }
+
+  .btn-row {
+    justify-content: flex-start;
+  }
+
+  /* 手机上名字在上、控件在下 */
+  .form-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
 }

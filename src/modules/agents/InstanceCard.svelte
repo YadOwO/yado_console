@@ -42,8 +42,8 @@
   }
 </script>
 
-<article class="instance" class:paused={!instance.isEnabled} class:live={instance.isEnabled}>
-  <div class="instance-head">
+<article class="instance card bar" class:tone-muted={!instance.isEnabled} class:tone-resolved={instance.isEnabled}>
+  <div class="inline-row">
     <span class="repo">{instance.repo}</span>
     {#if !isSeries}<span class="tag">{instance.branch}</span>{/if}
     <span class="instance-state">
@@ -86,7 +86,7 @@
       <span class="last-summary">{instance.lastRun.reason ?? instance.lastRun.summary ?? ''}</span>
     </a>
   {/if}
-  <div class="actions">
+  <div class="btn-row">
     <!-- 一次实现每次都要带上需求，只能在 Mac 上用 agentctl implement 提 -->
     {#if instance.flowType !== IMPLEMENT_FLOW}
       <button
@@ -129,50 +129,18 @@
 </article>
 
 <style>
+  /* 左侧色条（.bar）：绿=启用、灰=暂停，扫一眼就知道实例现在跑不跑 */
   .instance {
-    position: relative;
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 14px 16px 12px 20px;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
     transition: border-color 0.15s, box-shadow 0.15s;
   }
 
   .instance:hover {
     border-color: var(--line-strong);
     box-shadow: var(--shadow-md);
-  }
-
-  /* 左侧色条：绿=启用、灰=暂停，扫一眼就知道实例现在跑不跑 */
-  .instance::before {
-    position: absolute;
-    top: 14px;
-    bottom: 14px;
-    left: 0;
-    width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: transparent;
-    content: '';
-  }
-
-  .instance.live::before {
-    background: var(--resolved);
-  }
-
-  .instance.paused::before {
-    background: var(--line-strong);
-  }
-
-  .instance-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
   }
 
   .repo {
@@ -225,36 +193,20 @@
     text-decoration: underline;
   }
 
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
+  .btn-row {
     padding-top: 10px;
     border-top: 1px solid var(--line);
   }
 
-  .actions .btn {
+  .btn-row .btn {
     height: 30px;
     padding: 0 10px;
     font-size: 13px;
   }
 
-  .btn.danger {
-    color: var(--danger);
-  }
-
-  .btn.danger:hover:not(:disabled) {
-    border-color: var(--danger);
-  }
-
   @media (max-width: 720px) {
     .instance-state {
       margin-left: 0;
-    }
-
-    .actions {
-      justify-content: flex-start;
     }
 
     /* 手机上给上次运行的结论两行位置，不挤在一行截断 */

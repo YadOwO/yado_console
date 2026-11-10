@@ -6,7 +6,7 @@
    */
   import { onMount, untrack } from 'svelte';
 
-  import { refreshAdminStatus } from '../../lib/admin-status.svelte';
+  import { refreshBadges } from '../../lib/admin-status.svelte';
   import { isProductCode, PRODUCTS, productName, type ProductCode } from '../../lib/config';
   import { formatFullTime, formatTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
@@ -138,13 +138,13 @@
       }
     };
     document.addEventListener('visibilitychange', onVisible);
-    refreshAdminStatus().catch(() => undefined);
+    refreshBadges();
     return () => document.removeEventListener('visibilitychange', onVisible);
   });
 </script>
 
 <section class="page">
-  <header class="page-header">
+  <header class="page-header wraps">
     <div class="page-title">
       <h1>意见反馈</h1>
       <p class="page-sub">用户从各产品发来的反馈</p>
@@ -184,7 +184,7 @@
   {:else if tickets.length === 0 && errorText === null}
     <p class="empty">{status === 'pending' ? '没有待处理的反馈' : '没有反馈'}</p>
   {:else}
-    <ul class="tickets">
+    <ul class="list">
       {#each tickets as ticket (ticket.id)}
         <li>
           <a class="ticket" href="/feedback/conversations/{ticket.conversationId}">
@@ -218,63 +218,6 @@
 </section>
 
 <style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    width: 100%;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px;
-  }
-
-  .page-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .page-title {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .page-sub {
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  h1 {
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-
-  .filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .tickets {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-    list-style: none;
-  }
-
-  .tickets li + li {
-    border-top: 1px solid var(--line);
-  }
-
   .ticket {
     display: flex;
     flex-direction: column;
@@ -313,16 +256,5 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     overflow-wrap: anywhere;
-  }
-
-  .more {
-    display: flex;
-    justify-content: center;
-  }
-
-  @media (max-width: 720px) {
-    .page {
-      padding: 16px;
-    }
   }
 </style>

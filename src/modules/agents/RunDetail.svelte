@@ -9,11 +9,12 @@
 
   import { formatFullTime, formatTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
+  import { pollWhileVisible } from '../../lib/poll';
+  import { canGoBack } from '../../lib/router.svelte';
   import {
     compactNumber,
     durationText,
     flowTitle,
-    getOverview,
     getRun,
     instanceLabel,
     isRunActive,
@@ -27,6 +28,7 @@
     type IRunDetail,
   } from './api';
   import { commandState, performCommand } from './command.svelte';
+  import { ensureOverview, overviewState } from './overview-store.svelte';
 
   let { machineId, runId }: { machineId: string; runId: string } = $props();
 
@@ -59,22 +61,23 @@
 
   let run = $state<IRunDetail | null>(null);
   let errorText = $state<string | null>(null);
-  /** 标题：流程名 · 实例在页面上的名字（和列表一致）；总览还没取到时为 null，先显示实例 ID */
-  let title = $state<string | null>(null);
-  /** 标题只取一次：运行没结束时详情每 5 秒刷新，不跟着重复取总览 */
-  let isTitleRequested = false;
-
-  /** 取一次总览拼标题；取不到就一直显示实例 ID，不报错 */
-  async function loadTitle(detail: IRunDetail): Promise<void> {
-    try {
-      const overview = await getOverview();
-      const instance = overview.instances.find((item) => item.machineId === machineId && item.id === detail.instanceId);
-      const name = instance === undefined ? detail.instanceId : instanceLabel(instance);
-      title = `${flowTitle(overview.machines, detail.flowType)} · ${name}`;
-    } catch {
-      title = null;
+  /**
+   * 标题：流程名 · 实例在页面上的名字（和列表一致），从各页面共用的总览里拼；
+   * 总览还没取到（直接打开这一页）时为 null，先显示实例 ID
+   */
+  const title = $derived.by(() => {
+    const overview = overviewState.value;
+    const detail = run;
+    if (overview === null || detail === null) {
+      return null;
     }
-  }
+    const instance = overview.instances.find((item) => item.machineId === machineId && item.id === detail.instanceId);
+    const name = instance === undefined ? detail.instanceId : instanceLabel(instance);
+    return `${flowTitle(overview.machines, detail.flowType)} · ${name}`;
+  });
+
+  /** 从站内点进来的：「返回」退回上一页，位置和筛选都在；直接打开的只能去运行记录 */
+  const isBackable = canGoBack();
 
   const groups = $derived(
     GROUPS.map((group) => ({
@@ -88,10 +91,6 @@
     try {
       run = await getRun(machineId, runId);
       errorText = null;
-      if (!isTitleRequested) {
-        isTitleRequested = true;
-        void loadTitle(run);
-      }
     } catch (error) {
       errorText = errorMessage(error);
     }
@@ -132,17 +131,17 @@
 
   onMount(() => {
     void load();
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible' && run !== null && isRunActive(run.status)) {
+    ensureOverview();
+    return pollWhileVisible(() => {
+      if (run !== null && isRunActive(run.status)) {
         void load();
       }
     }, REFRESH_INTERVAL_MS);
-    return () => clearInterval(timer);
   });
 </script>
 
 <section class="page">
-  <a class="back muted" href="/agents/runs">← 运行记录</a>
+  <a class="back muted" href="/agents/runs" data-back>{isBackable ? '← 返回' : '← 运行记录'}</a>
 
   {#if errorText !== null}
     <p class="error-banner">{errorText}</p>
@@ -152,7 +151,7 @@
     {#if errorText === null}<p class="empty">加载中…</p>{/if}
   {:else}
     <header class="head">
-      <div class="title-row">
+      <div class="inline-row">
         <h1 title={run.instanceId}>{title ?? run.instanceId}</h1>
         <span class={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
         {#if isRunActive(run.status)}
@@ -171,14 +170,14 @@
     {/if}
 
     {#if run.summary !== null || run.reason !== null}
-      <div class="card summary-card tone-{statusTone(run.status)}">
+      <div class="card bar summary-card tone-{statusTone(run.status)}">
         <span class="card-label">结论</span>
         {#if run.summary !== null}<p class="summary-text">{run.summary}</p>{/if}
         {#if run.reason !== null}<p class="reason">{run.reason}</p>{/if}
       </div>
     {/if}
 
-    <dl class="facts">
+    <dl class="facts card">
       {#if run.delegatedFrom !== null}
         <dt>来自</dt>
         <dd><a class="mono" href="/agents/runs/{machineId}/{run.delegatedFrom}">{run.delegatedFrom}</a> 里交给你的问题</dd>
@@ -200,12 +199,12 @@
       <h2 class="group-head">
         <span class="group-dot tone-{group.tone}"></span>
         {group.title}
-        <span class="group-count">{group.findings.length}</span>
+        <span class="pill">{group.findings.length}</span>
       </h2>
       <ul class="list findings tone-{group.tone}">
         {#each group.findings as finding (finding.id)}
           <li class="finding">
-            <div class="meta">
+            <div class="inline-row">
               <span class="mono muted">{finding.ref}</span>
               <span class="tag">{severityLabel(finding.severity)}</span>
               <span class="title">{finding.title}</span>
@@ -223,7 +222,7 @@
       </ul>
     {/each}
 
-    <h2 class="group-head">步骤<span class="group-count">{run.steps.length}</span></h2>
+    <h2 class="group-head">步骤<span class="pill">{run.steps.length}</span></h2>
     <ul class="list">
       {#each run.steps as step (step.key)}
         <li class="step">
@@ -258,23 +257,7 @@
 
 <style>
   .page {
-    display: flex;
-    flex-direction: column;
     gap: 14px;
-    width: 100%;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px 24px 80px;
-  }
-
-  .back {
-    align-self: flex-start;
-    font-size: 13px;
-    transition: color 0.15s;
-  }
-
-  .back:hover {
-    color: var(--fg);
   }
 
   .head {
@@ -283,17 +266,7 @@
     gap: 4px;
   }
 
-  .title-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-
   h1 {
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
     overflow-wrap: anywhere;
   }
 
@@ -307,11 +280,6 @@
 
   .btn.danger {
     margin-left: auto;
-    color: var(--danger);
-  }
-
-  .btn.danger:hover:not(:disabled) {
-    border-color: var(--danger);
   }
 
   .card {
@@ -319,28 +287,16 @@
     flex-direction: column;
     gap: 6px;
     padding: 12px 16px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
   }
 
-  /* 结论卡左侧色条与问题分组共用一个语义色 */
+  /* 结论卡左侧的色条（.bar）与问题分组共用一个语义色（.tone-*）；卡片矮，色条上下各留 12px */
   .summary-card {
-    position: relative;
     padding-left: 20px;
-    overflow: hidden;
   }
 
   .summary-card::before {
-    position: absolute;
     top: 12px;
     bottom: 12px;
-    left: 0;
-    width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: var(--tone);
-    content: '';
   }
 
   .card-label {
@@ -364,10 +320,6 @@
     gap: 5px 16px;
     margin: 0;
     padding: 12px 16px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
     font-size: 13px;
   }
 
@@ -385,12 +337,7 @@
   }
 
   .group-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     margin-top: 6px;
-    font-size: 15px;
-    font-weight: 600;
   }
 
   .group-dot {
@@ -398,80 +345,26 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--tone);
+    background: var(--tone, var(--line-strong));
   }
 
-  .group-count {
-    padding: 0 8px;
-    border-radius: 999px;
-    background: var(--chip-bg);
-    color: var(--muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
+  /* 条数在加粗的标题里，自己不加那么粗 */
+  .group-head .pill {
     font-weight: 500;
-    line-height: 20px;
-  }
-
-  .summary-card,
-  .group-dot,
-  .findings {
-    --tone: var(--line-strong);
-  }
-
-  .tone-resolved {
-    --tone: var(--resolved);
-  }
-
-  .tone-pending {
-    --tone: var(--pending);
-  }
-
-  .tone-danger {
-    --tone: var(--danger);
-  }
-
-  .tone-info {
-    --tone: var(--info);
-  }
-
-  .tone-muted {
-    --tone: var(--line-strong);
-  }
-
-  .list {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-    list-style: none;
   }
 
   .findings {
-    border-left: 3px solid var(--tone);
+    border-left: 3px solid var(--tone, var(--line-strong));
   }
 
   .list li {
     padding: 11px 16px;
   }
 
-  .list li + li {
-    border-top: 1px solid var(--line);
-  }
-
   .finding {
     display: flex;
     flex-direction: column;
     gap: 4px;
-  }
-
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
   }
 
   .title {
@@ -566,10 +459,6 @@
   }
 
   @media (max-width: 720px) {
-    .page {
-      padding: 16px 16px 80px;
-    }
-
     .step-key {
       min-width: 0;
     }

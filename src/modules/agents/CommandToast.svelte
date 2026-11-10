@@ -1,13 +1,15 @@
 <script lang="ts">
   /**
-   * 页面底部的指令进度提示条：最近一条指令发到哪一步、结果如何。Agent 的各页面都放一个。
+   * 页面底部的指令进度提示条：最近一条指令发到哪一步、结果如何；连续处理了几条时写明还有几条在路上。Agent 的各页面都放一个。
    */
   import { commandState, dismissNotice } from './command.svelte';
 </script>
 
 {#if commandState.notice !== null}
   <div class="toast toast-{commandState.notice.tone}" role="status">
-    <span>{commandState.notice.text}</span>
+    <span>
+      {commandState.notice.text}{#if commandState.pendingCount > 1}<small class="muted">（还有 {commandState.pendingCount - 1} 条在处理）</small>{/if}
+    </span>
     <button type="button" aria-label="关闭" onclick={dismissNotice}>×</button>
   </div>
 {/if}

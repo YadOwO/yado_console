@@ -1,21 +1,23 @@
 <script lang="ts">
   /**
-   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳并开工、丢弃，或者自己做完了标成已实现，都可以写一句备注。放在产品探索的流程页里。
+   * 产品探索的想法：主审定时看每个产品，提出接下来可以做什么，你决定采纳并开工、丢弃，或者自己做完了标成已实现，都可以写一句备注。放在顶部标签的「想法」页里。
    *
    * 按产品分组、按你在实例设置里排的先后，组标题显示没处理的条数与这个产品的上限；满了的产品下次探索会跳过，处理掉一条才会再想。
    * 采纳并开工：Mac 把想法加备注交给同一个系列的一次实现，做完推到新分支、进待办；已处理的那条能点进那次运行。
    * 已实现：你看了之后自己去做了、没走流程，只记下来，主审以后不会再提。
    * 想先聊清楚的，在 Mac 上用 /yado-implement I<编号>。
    * 你的处理和备注，主审下次探索前会看，可能总结成「产品偏好」（同一页下面）。
-   * 已处理的收在每组下面，只有最近一部分。处理都是发指令给 Mac。
+   * 已处理的收在每组下面，只有最近一部分。
+   * 处理都是发指令给 Mac：点了确定就先从没处理的里拿掉，指令在后台发，可以接着看下一条；没成功的会放回来，备注还在。
    */
   import { onMount } from 'svelte';
 
-  import { refreshAdminStatus } from '../../lib/admin-status.svelte';
+  import { refreshBadges } from '../../lib/admin-status.svelte';
   import { formatDate, formatFullTime } from '../../lib/format';
   import { errorMessage } from '../../lib/http';
   import { getIdeas, IDEA_NOTE_MAX, IDEA_SIZE_LABEL, type CommandInput, type IIdea, type IIdeaList } from './api';
-  import { commandState, performCommand } from './command.svelte';
+  import { submitCommand } from './command.svelte';
+  import NotePanel from './NotePanel.svelte';
 
   /** 一组想法：某个产品探索实例下的一个产品 */
   interface IIdeaGroup {
@@ -51,8 +53,12 @@
   /** 正在写备注的想法与打算的处理 */
   let deciding = $state<{ key: string; decision: Decision } | null>(null);
   let note = $state('');
+  /** 已经点了确定、指令还在路上的想法（按 ideaKey），先不显示 */
+  let hiddenKeys = $state.raw<readonly string[]>([]);
+  /** 每次加载递增；连着处理几条时，先发的请求后回来不盖掉新的 */
+  let loadVersion = 0;
 
-  const groups = $derived(list === null ? [] : groupIdeas(list));
+  const groups = $derived(list === null ? [] : groupIdeas(list, hiddenKeys));
   const openCount = $derived(groups.reduce((sum, group) => sum + group.open.length, 0));
 
   /** 想法在页面上的唯一键 */
@@ -64,10 +70,13 @@
    * 按机器、实例、产品分组。产品按你排的先后，没排过的放后面，其中有没处理的在前、再按名字；
    * 组内没处理的旧的在前，已处理的新处理的在前。
    */
-  function groupIdeas(data: IIdeaList): IIdeaGroup[] {
+  function groupIdeas(data: IIdeaList, hidden: readonly string[]): IIdeaGroup[] {
     const instanceCount = new Set(data.ideas.map((idea) => `${idea.machineId}/${idea.instanceId}`)).size;
     const result = new Map<string, IIdeaGroup>();
     for (const idea of data.ideas) {
+      if (hidden.includes(ideaKey(idea))) {
+        continue;
+      }
       const key = `${idea.machineId}/${idea.instanceId}/${idea.product}`;
       let group = result.get(key);
       if (group === undefined) {
@@ -100,11 +109,17 @@
 
   /** 加载想法 */
   async function load(): Promise<void> {
+    const version = ++loadVersion;
     try {
-      list = await getIdeas();
-      errorText = null;
+      const data = await getIdeas();
+      if (version === loadVersion) {
+        list = data;
+        errorText = null;
+      }
     } catch (error) {
-      errorText = errorMessage(error);
+      if (version === loadVersion) {
+        errorText = errorMessage(error);
+      }
     } finally {
       isLoading = false;
     }
@@ -116,8 +131,12 @@
     note = '';
   }
 
-  /** 采纳并开工、丢弃或标成已实现，带上备注 */
+  /**
+   * 采纳并开工、丢弃或标成已实现，带上备注。先从没处理的里拿掉，指令在后台发；
+   * Mac 是先同步状态、再回报结果，所以成功后重新取一次，它就到「已处理」里了。
+   */
   async function decide(idea: IIdea, decision: Decision): Promise<void> {
+    const key = ideaKey(idea);
     const text = note.trim();
     const payload: { id: number; note?: string } = { id: idea.id };
     if (text !== '') {
@@ -125,11 +144,18 @@
     }
     const command: CommandInput =
       decision === 'adopted' ? { type: 'idea.implement', payload } : { type: 'idea.decide', payload: { ...payload, decision } };
-    if (await performCommand(idea.machineId, command, `${DECISION_LABEL[decision]} I${idea.id}`)) {
-      deciding = null;
+    deciding = null;
+    hiddenKeys = [...hiddenKeys, key];
+    const outcome = await submitCommand(idea.machineId, command, `${DECISION_LABEL[decision]} I${idea.id}`);
+    if (outcome.isOk) {
       await load();
-      refreshAdminStatus().catch(() => undefined);
+      refreshBadges();
+    } else if (deciding === null) {
+      // 没成功（原因在底部提示条上）：放回来，备注框照原样打开；你已经在写另一条时不打断
+      deciding = { key, decision };
+      note = text;
     }
+    hiddenKeys = hiddenKeys.filter((item) => item !== key);
   }
 
   /** 没处理的是否已满 */
@@ -139,7 +165,7 @@
 
   onMount(() => {
     void load();
-    refreshAdminStatus().catch(() => undefined);
+    refreshBadges();
   });
 </script>
 
@@ -170,7 +196,7 @@
   <div class="section-header">
     <div class="section-title">
       <h2>想法</h2>
-      {#if openCount > 0}<span class="section-count">{openCount} 条没处理</span>{/if}
+      {#if openCount > 0}<span class="pill">{openCount} 条没处理</span>{/if}
     </div>
   </div>
 
@@ -188,7 +214,7 @@
         <div class="group-head">
           <h3>{group.title}</h3>
           <span
-            class="count"
+            class="pill"
             class:full={isFull(group)}
             title={isFull(group)
               ? '没处理的满了，下次探索跳过这个产品'
@@ -201,9 +227,9 @@
         </div>
 
         {#each group.open as idea (ideaKey(idea))}
-          <article class="idea">
+          <article class="idea card">
             <div class="idea-head">
-              <span class="mono muted id">I{idea.id}</span>
+              <span class="mono muted id-chip">I{idea.id}</span>
               <h4>{idea.title}</h4>
               <a class="muted time" href="/agents/runs/{idea.machineId}/{idea.runId}" title={formatFullTime(idea.createdAt)}
                 >{formatDate(idea.createdAt)}</a
@@ -212,56 +238,36 @@
             {@render body(idea)}
             {#if deciding !== null && deciding.key === ideaKey(idea)}
               {@const decision = deciding.decision}
-              <div class="decide">
-                <textarea
-                  bind:value={note}
-                  rows="2"
-                  maxlength={IDEA_NOTE_MAX}
-                  placeholder={NOTE_PLACEHOLDER[decision]}
-                  aria-label="备注"
-                ></textarea>
-                {#if decision === 'adopted' && idea.questions.length > 0}
-                  <p class="muted hint">先在备注里回答上面的问题，没回答的按最稳妥的做法定</p>
-                {/if}
-                <div class="actions">
-                  <button class="btn" type="button" onclick={() => (deciding = null)}>取消</button>
-                  <button
-                    class="btn"
-                    class:btn-primary={decision === 'adopted'}
-                    type="button"
-                    disabled={commandState.isBusy}
-                    onclick={() => void decide(idea, decision)}>确定{DECISION_LABEL[decision]}</button
-                  >
-                </div>
-              </div>
+              <NotePanel
+                bind:note
+                tip={decision === 'adopted' && idea.questions.length > 0 ? '先在备注里回答上面的问题，没回答的按最稳妥的做法定' : null}
+                placeholder={NOTE_PLACEHOLDER[decision]}
+                label="备注"
+                maxlength={IDEA_NOTE_MAX}
+                confirmLabel="确定{DECISION_LABEL[decision]}"
+                isPrimary={decision === 'adopted'}
+                onCancel={() => (deciding = null)}
+                onConfirm={() => void decide(idea, decision)}
+              />
             {:else}
-              <div class="actions">
-                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => openDecide(idea, 'discarded')}
-                  >丢弃</button
-                >
-                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => openDecide(idea, 'done')}
-                  >已实现</button
-                >
-                <button
-                  class="btn btn-primary"
-                  type="button"
-                  disabled={commandState.isBusy}
-                  onclick={() => openDecide(idea, 'adopted')}>采纳并开工</button
-                >
+              <div class="btn-row">
+                <button class="btn" type="button" onclick={() => openDecide(idea, 'discarded')}>丢弃</button>
+                <button class="btn" type="button" onclick={() => openDecide(idea, 'done')}>已实现</button>
+                <button class="btn btn-primary" type="button" onclick={() => openDecide(idea, 'adopted')}>采纳并开工</button>
               </div>
             {/if}
           </article>
         {/each}
 
         {#if group.decided.length > 0}
-          <details class="decided">
+          <details class="fold">
             <summary>已处理（{group.decided.length}）</summary>
             <ul class="list">
               {#each group.decided as idea (ideaKey(idea))}
                 <li>
                   <details class="done">
                     <summary>
-                      <span class="mono muted id">I{idea.id}</span>
+                      <span class="mono muted id-chip">I{idea.id}</span>
                       <span class="status" class:status-resolved={idea.status !== 'discarded'} class:status-neutral={idea.status === 'discarded'}
                         >{STATUS_LABEL[idea.status]}</span
                       >
@@ -301,69 +307,10 @@
     gap: 12px;
   }
 
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 4px;
-  }
-
-  .section-title {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
-
-  .section-count {
-    padding: 0 8px;
-    border-radius: 999px;
-    background: var(--chip-bg);
-    color: var(--muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    line-height: 20px;
-    white-space: nowrap;
-  }
-
-  h2 {
-    font-size: 15px;
-    font-weight: 600;
-  }
-
   .group {
     display: flex;
     flex-direction: column;
     gap: 10px;
-  }
-
-  .group-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  h3 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-    overflow-wrap: anywhere;
-  }
-
-  .count {
-    padding: 0 8px;
-    border-radius: 999px;
-    background: var(--chip-bg);
-    color: var(--muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    line-height: 20px;
-    white-space: nowrap;
-  }
-
-  .count.full {
-    background: var(--pending-bg);
-    color: var(--pending);
   }
 
   .idea {
@@ -371,10 +318,6 @@
     flex-direction: column;
     gap: 8px;
     padding: 14px 16px 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
   }
 
   .idea-head {
@@ -390,12 +333,8 @@
     overflow-wrap: anywhere;
   }
 
-  .id {
+  .id-chip {
     flex-shrink: 0;
-    padding: 0 4px;
-    border-radius: 4px;
-    background: var(--chip-bg);
-    line-height: 18px;
   }
 
   .time {
@@ -432,58 +371,10 @@
     overflow-wrap: anywhere;
   }
 
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  .decide {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px;
-    border-radius: 10px;
-    background: var(--surface-sunken);
-  }
-
-  textarea {
-    width: 100%;
-    min-height: 56px;
-    max-height: 40vh;
-    padding: 8px 12px;
-    border: 1px solid var(--field-border);
-    border-radius: 8px;
-    background: var(--field);
-    resize: vertical;
-    field-sizing: content;
-    transition: border-color 0.15s;
-  }
-
-  textarea:hover {
-    border-color: var(--line-strong);
-  }
-
-  .decided > summary {
-    width: fit-content;
-    color: var(--muted);
-    font-size: 13px;
-    cursor: pointer;
-  }
-
+  /* 已处理的列表收在「已处理」下面，不用阴影 */
   .list {
-    margin: 6px 0 0;
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    list-style: none;
-  }
-
-  .list > li + li {
-    border-top: 1px solid var(--line);
+    margin-top: 6px;
+    box-shadow: none;
   }
 
   .done > summary {
@@ -524,11 +415,5 @@
   /* 已开工的那条：点进一次实现的运行 */
   .hint a {
     text-decoration: underline;
-  }
-
-  @media (max-width: 720px) {
-    .actions {
-      justify-content: flex-start;
-    }
   }
 </style>

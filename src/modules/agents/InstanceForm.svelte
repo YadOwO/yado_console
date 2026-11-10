@@ -254,7 +254,7 @@
 <form class="form" onsubmit={submit}>
   {#if initial === null}
     {#if machines.length > 1}
-      <label class="field">
+      <label class="form-row">
         <span>机器</span>
         <select bind:value={machineId}>
           {#each machines as option (option.id)}
@@ -264,7 +264,7 @@
       </label>
     {/if}
     {#if fixedFlow === null}
-      <label class="field">
+      <label class="form-row">
         <span>流程</span>
         <select bind:value={() => flowType, selectFlow}>
           {#each machine?.flows ?? [] as flow (flow.type)}
@@ -273,14 +273,14 @@
         </select>
       </label>
     {/if}
-    <label class="field">
+    <label class="form-row">
       <span>仓库</span>
       <input bind:value={repo} placeholder="YadOwO/yado_ai" autocomplete="off" spellcheck="false" />
     </label>
   {/if}
 
   {#if !isSeries}
-  <label class="field">
+  <label class="form-row">
     <span>开发分支</span>
     <input bind:value={branch} autocomplete="off" spellcheck="false" />
   </label>
@@ -290,12 +290,12 @@
   {/if}
 
   {#if isImplement}
-    <div class="field">
+    <div class="form-row">
       <span>什么时候跑</span>
       <span class="muted">只手动：每次在 Mac 上带着需求提</span>
     </div>
   {:else}
-  <div class="field">
+  <div class="form-row">
     <span>什么时候跑</span>
     <div class="inline">
       <select bind:value={scheduleKind} aria-label="调度方式">
@@ -330,7 +330,7 @@
   {:else}
     {#if isExplore}
     {#if hasProductLimits}
-    <div class="field field-top">
+    <div class="form-row field-top">
       <span>产品与上限</span>
       {#if products.length === 0}
         <span class="muted">PROJECTS.md 的「产品」表里还没有产品</span>
@@ -374,7 +374,7 @@
     </div>
     <p class="hint">从上到下是想法页和探索的先后；没处理的想法到了上限，这个产品就跳过。PROJECTS.md 里新加的产品排最后，先按 {ideaLimit} 条。</p>
     {:else}
-    <label class="field">
+    <label class="form-row">
       <span>想法上限</span>
       <span class="inline">
         <input class="narrow" type="number" min="1" max={IDEA_LIMIT_MAX} bind:value={ideaLimit} />
@@ -383,7 +383,7 @@
     </label>
     <p class="hint">没处理的想法到了上限，这个产品就跳过，处理掉一条才会再想。</p>
     {/if}
-    <div class="field">
+    <div class="form-row">
       <span>上网调研</span>
       <div class="segmented" role="group" aria-label="上网调研">
         <button type="button" aria-pressed={!isWebEnabled} onclick={() => (isWebEnabled = false)}>关</button>
@@ -392,13 +392,13 @@
     </div>
     <p class="hint">打开后主审可以上网查竞品、平台规则这类资料。</p>
     {:else if !isImplement}
-    <label class="field">
+    <label class="form-row">
       <span>最多几轮</span>
       <input class="narrow" type="number" min="1" max="5" bind:value={maxRounds} />
     </label>
     {/if}
     {#each roles as { role, label } (role)}
-      <label class="field">
+      <label class="form-row">
         <span>{label}模型</span>
         <select bind:value={models[role]}>
           <option value="">跟随全局（{machine?.settings?.models[role] ?? '—'}）</option>
@@ -413,7 +413,7 @@
   {#if errorText !== null}
     <p class="error-banner">{errorText}</p>
   {/if}
-  <div class="actions">
+  <div class="form-actions">
     <button class="btn" type="button" onclick={onClose}>取消</button>
     <button class="btn btn-primary" type="submit" disabled={commandState.isBusy || machineId === '' || (initial === null && isSeries)}>
       {initial === null ? '新建' : '保存'}
@@ -423,40 +423,21 @@
 
 <style>
   .form {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 16px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--surface-sunken);
   }
 
-  .field {
-    display: grid;
-    grid-template-columns: 88px minmax(0, 1fr);
-    align-items: center;
-    gap: 12px;
+  .form-row {
     max-width: 640px;
   }
 
-  .field > span {
+  .form-row > span {
     color: var(--muted);
   }
 
-  .field .segmented {
+  .form-row .segmented {
     justify-self: start;
-  }
-
-  .inline {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .narrow {
-    width: 80px;
   }
 
   /* 内容比一行高的字段，标题和第一行对齐 */
@@ -521,20 +502,7 @@
     font-size: 12px;
   }
 
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
-  }
-
   @media (max-width: 720px) {
-    .field {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 4px;
-    }
-
     .hint {
       margin-left: 0;
     }

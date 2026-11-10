@@ -2,24 +2,22 @@
   /**
    * 运行列表：状态、实例、时间、结论，点进去看详情。流程页的「最近运行」和运行记录页共用。
    *
-   * 实例默认显示仓库名（传 instanceLabels），没有对应项时显示实例 ID；跨流程的列表传 flowTitles，每条前面带流程标签。
+   * 实例显示仓库名（名字从各页面共用的总览里取），取不到时显示实例 ID；跨流程的列表传 isShowingFlow，每条前面带流程标签。
    *
    * 还没结束的运行多两行：这次做什么（一次实现的需求、发哪些仓库等），和现在在干什么（运行中是哪一步，排队中是在等什么）。
    * 结束了的只看结论，结论里已经写了做的是什么。
    */
   import { formatFullTime, formatTime } from '../../lib/format';
   import { durationText, isRunActive, runStatusClass, runStatusLabel, type IRunListItem } from './api';
+  import { overviewState } from './overview-store.svelte';
 
   let {
     runs,
-    instanceLabels = {},
-    flowTitles = null,
+    isShowingFlow = false,
   }: {
     runs: IRunListItem[];
-    /** 实例 ID → 页面上的名字 */
-    instanceLabels?: Record<string, string>;
-    /** 流程类型 → 中文名；null 时不显示流程标签 */
-    flowTitles?: Record<string, string> | null;
+    /** 每条前面带不带流程标签：列表里混着几种流程时带 */
+    isShowingFlow?: boolean;
   } = $props();
 
   /** 开始时间与耗时，如「昨天 23:16 · 9 分钟」；正在跑的写已经跑了多久 */
@@ -44,10 +42,10 @@
   {#each runs as run (`${run.machineId}/${run.id}`)}
     <li>
       <a class="row" href="/agents/runs/{run.machineId}/{run.id}">
-        <div class="meta">
+        <div class="inline-row">
           <span class={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
-          {#if flowTitles !== null}<span class="tag">{flowTitles[run.flowType] ?? run.flowType}</span>{/if}
-          <span class="instance">{instanceLabels[run.instanceId] ?? run.instanceId}</span>
+          {#if isShowingFlow}<span class="tag">{overviewState.flowTitles[run.flowType] ?? run.flowType}</span>{/if}
+          <span class="instance">{overviewState.instanceLabels[run.instanceId] ?? run.instanceId}</span>
           <time class="muted time" datetime={run.queuedAt} title={formatFullTime(run.queuedAt)}>
             {timeText(run)}
           </time>
@@ -64,21 +62,6 @@
 </ul>
 
 <style>
-  .list {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-    list-style: none;
-  }
-
-  .list li + li {
-    border-top: 1px solid var(--line);
-  }
-
   .row {
     display: flex;
     flex-direction: column;
@@ -89,13 +72,6 @@
 
   .row:hover {
     background: var(--surface-hover);
-  }
-
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
   }
 
   .instance {

@@ -12,3 +12,8 @@ export async function refreshAdminStatus(): Promise<IAdminStatus> {
   adminStatus.value = status;
   return status;
 }
+
+/** 数据变了之后顺手刷新侧栏角标；失败不用管，角标下次还会刷 */
+export function refreshBadges(): void {
+  refreshAdminStatus().catch(() => undefined);
+}

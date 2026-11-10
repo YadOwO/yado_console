@@ -2,7 +2,8 @@
   /**
    * Agent 总览：机器状态、待办提醒、各流程一张卡（实例数、下次运行、上次运行；点进去看实例、运行和流程自己的东西）、全局设置。
    *
-   * 页面可见时每 10 秒从 hub 刷新一次。hub 上的数据是 Mac 最近一次上传时的状态（有新动态时约 2～7 秒内，否则一小时一次），
+   * 总览数据是各页面共用的一份（overview-store.svelte.ts）：进来先显示上次取到的，页面可见时每 10 秒从 hub 刷新一次。
+   * hub 上的数据是 Mac 最近一次上传时的状态（有新动态时约 2～7 秒内，否则一小时一次），
    * 「立即同步」让 Mac 马上传一次。点机器上的「运行中 · 排队 · 等你点头」展开看具体是哪些运行，展开时跟着一起刷新。
    */
   import { onMount } from 'svelte';
@@ -12,7 +13,6 @@
   import { errorMessage } from '../../lib/http';
   import {
     EXPLORE_FLOW,
-    getOverview,
     IMPLEMENT_FLOW,
     instanceLabel,
     listRuns,
@@ -25,13 +25,11 @@
     type IOverview,
     type IRunListItem,
   } from './api';
-  import AgentTabs from './AgentTabs.svelte';
+  import AgentPage from './AgentPage.svelte';
   import { commandState, performCommand } from './command.svelte';
+  import { overviewState, refreshOverview, visibleInbox, watchOverview } from './overview-store.svelte';
   import RunItems from './RunItems.svelte';
   import SettingsForm from './SettingsForm.svelte';
-
-  /** 自动刷新间隔 */
-  const REFRESH_INTERVAL_MS = 10_000;
 
   /** 一张流程卡 */
   interface IFlowCard {
@@ -45,15 +43,16 @@
     badge: { label: string; tone: string };
   }
 
-  let overview = $state<IOverview | null>(null);
-  let isLoading = $state(true);
-  let errorText = $state<string | null>(null);
+  const overview = $derived(overviewState.value);
+  const isLoading = $derived(overviewState.isLoading);
+  const errorText = $derived(overviewState.errorText);
+  /** 还没处理的待办数；已经点了处理、指令还在路上的不算 */
+  const inboxCount = $derived(visibleInbox().length);
 
   const machines = $derived(overview?.machines ?? []);
   /** 产品探索还没处理的想法数 */
   const ideaCount = $derived(adminStatus.value?.agentIdeaCount ?? 0);
   const cards = $derived(overview === null ? [] : buildCards(overview));
-  const instanceLabels = $derived(Object.fromEntries((overview?.instances ?? []).map((item) => [item.id, instanceLabel(item)])));
 
   /** 展开了运行中与排队列表的机器 */
   let expandedMachineId = $state<string | null>(null);
@@ -62,11 +61,6 @@
   let activeError = $state<string | null>(null);
   /** 每次加载递增；收起或换机器后丢弃旧请求的结果 */
   let activeVersion = 0;
-
-  /** 机器上的流程类型 → 中文名，列表里每条前面带上 */
-  function flowTitlesOf(machine: IMachine): Record<string, string> {
-    return Object.fromEntries(machine.flows.map((item) => [item.type, item.title]));
-  }
 
   /** 加载某台机器运行中、排队和等你点头的运行；运行列表不能按机器筛，取回来再挑 */
   async function loadActive(machineId: string): Promise<void> {
@@ -145,21 +139,17 @@
     return card.instances.filter((item) => !item.isEnabled).length;
   }
 
-  /** 加载总览；isSilent 时不显示加载中 */
-  async function load(isSilent = false): Promise<void> {
-    if (!isSilent) {
-      isLoading = true;
+  /** 总览刷新后，展开着的运行中与排队列表跟着刷新 */
+  function reloadActive(): void {
+    if (expandedMachineId !== null) {
+      void loadActive(expandedMachineId);
     }
-    try {
-      overview = await getOverview();
-      errorText = null;
-      if (expandedMachineId !== null) {
-        void loadActive(expandedMachineId);
-      }
-    } catch (error) {
-      errorText = errorMessage(error);
-    } finally {
-      isLoading = false;
+  }
+
+  /** 手动刷新，或指令成功后刷新；isSilent 时不显示加载中 */
+  async function load(isSilent = false): Promise<void> {
+    if ((await refreshOverview({ isSilent, isFresh: true })) !== null) {
+      reloadActive();
     }
   }
 
@@ -175,26 +165,13 @@
     }
   }
 
-  onMount(() => {
-    void load();
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void load(true);
-      }
-    }, REFRESH_INTERVAL_MS);
-    return () => clearInterval(timer);
-  });
+  onMount(() => watchOverview(reloadActive));
 </script>
 
-<section class="page">
-  <header class="page-header">
-    <div class="page-title">
-      <h1>Agent</h1>
-      <p class="page-sub">Mac 上的自动 review、清理、产品探索、一次实现与发布</p>
-    </div>
+<AgentPage active="overview" sub="Mac 上的自动 review、清理、产品探索、一次实现与发布">
+  {#snippet actions()}
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
-  </header>
-  <AgentTabs active="overview" />
+  {/snippet}
 
   {#if errorText !== null}
     <p class="error-banner">{errorText}</p>
@@ -207,7 +184,7 @@
       <p class="empty">还没有 Mac 同步过来。在 Mac 上运行 <span class="mono">agentctl hub setup</span>，按提示配置 hub。</p>
     {/if}
     {#each machines as machine (machine.id)}
-      <div class="machine">
+      <div class="machine card">
         <span class="dot" class:online={machine.isOnline}></span>
         <div class="machine-text">
           <span class="machine-name">{machine.id}</span>
@@ -239,14 +216,14 @@
         {:else if activeRuns.length === 0}
           <p class="active-empty">现在没有运行中、排队或等你点头的运行</p>
         {:else}
-          <RunItems runs={activeRuns} {instanceLabels} flowTitles={flowTitlesOf(machine)} />
+          <RunItems runs={activeRuns} isShowingFlow />
         {/if}
       {/if}
     {/each}
 
-    {#if overview.inbox.length > 0}
+    {#if inboxCount > 0}
       <a class="inbox-banner" href="/agents/inbox">
-        <span class="inbox-count">{overview.inbox.length}</span>
+        <span class="inbox-count">{inboxCount}</span>
         <span class="inbox-text">
           <span class="inbox-title">条待办等你决定</span>
           <span class="inbox-sub">主审交给你的问题，和需要你看一下的运行</span>
@@ -261,8 +238,8 @@
       </div>
       <div class="flows">
         {#each cards as card (card.flow.type)}
-          <a class="flow" class:paused={card.flow.isPaused} href="/agents/flows/{card.flow.type}">
-            <div class="flow-head">
+          <a class="flow card" class:paused={card.flow.isPaused} href="/agents/flows/{card.flow.type}">
+            <div class="inline-row flow-head">
               <h2>{card.flow.title}</h2>
               {#if card.flow.isPaused}<span class="status status-neutral">已暂停</span>{/if}
               <span class="status status-{card.badge.tone}">{card.badge.label}</span>
@@ -305,73 +282,22 @@
 
     {#each machines as machine (machine.id)}
       {#if machine.settings !== null}
-        <details class="settings">
+        <details class="settings card">
           <summary>全局设置{machines.length > 1 ? `（${machine.id}）` : ''}</summary>
           <SettingsForm {machine} settings={machine.settings} onSaved={() => void load(true)} />
         </details>
       {/if}
     {/each}
   {/if}
-</section>
+</AgentPage>
 
 <style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    width: 100%;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px 24px 80px;
-  }
-
-  .page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .page-title {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .page-sub {
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 4px;
-  }
-
-  h1 {
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-
-  h2 {
-    font-size: 15px;
-    font-weight: 600;
-  }
-
   .machine {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 10px 14px;
     padding: 12px 16px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
   }
 
   .machine-text {
@@ -516,10 +442,6 @@
     gap: 10px;
     min-width: 0;
     padding: 16px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
     transition: border-color 0.15s, box-shadow 0.15s;
   }
 
@@ -530,13 +452,6 @@
 
   .flow.paused {
     opacity: 0.7;
-  }
-
-  .flow-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
   }
 
   .flow-head h2 {
@@ -608,13 +523,6 @@
     white-space: nowrap;
   }
 
-  .settings {
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-  }
-
   .settings summary {
     display: flex;
     align-items: center;
@@ -642,10 +550,6 @@
   }
 
   @media (max-width: 720px) {
-    .page {
-      padding: 16px 16px 80px;
-    }
-
     .flows {
       grid-template-columns: minmax(0, 1fr);
     }

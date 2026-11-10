@@ -1,43 +1,35 @@
 <script lang="ts">
   /**
-   * 一个流程的页面：这类流程的说明与整体暂停、它的实例（仓库流程可以在这里新建）、流程自己的东西
-   * （产品探索的想法与产品偏好）、最近运行。从总览的流程卡进来。
+   * 一个流程的页面：这类流程的说明与整体暂停、它的实例（仓库流程可以在这里新建）、最近运行。从总览的流程卡进来。
+   * 产品探索的想法与产品偏好在顶部标签的「想法」里，这里只留一个入口。
    *
-   * 页面可见时每 10 秒刷新一次；表单打开时只刷新数据，不冲掉正在编辑的内容。
+   * 总览数据是各页面共用的一份，进来先显示上次取到的；页面可见时每 10 秒刷新一次，最近运行跟着刷新。
+   * 表单打开时只刷新数据，不冲掉正在编辑的内容。
    */
   import { onMount } from 'svelte';
 
-  import { refreshAdminStatus } from '../../lib/admin-status.svelte';
+  import { adminStatus, refreshBadges } from '../../lib/admin-status.svelte';
   import { errorMessage } from '../../lib/http';
-  import {
-    EXPLORE_FLOW,
-    flowTitle,
-    getOverview,
-    IMPLEMENT_FLOW,
-    instanceLabel,
-    listRuns,
-    SERIES_FLOWS,
-    type IOverview,
-    type IRunListItem,
-  } from './api';
+  import { EXPLORE_FLOW, flowTitle, IMPLEMENT_FLOW, listRuns, SERIES_FLOWS, type IRunListItem } from './api';
   import { commandState, performCommand } from './command.svelte';
   import CommandToast from './CommandToast.svelte';
-  import IdeaList from './IdeaList.svelte';
   import InstanceCard from './InstanceCard.svelte';
   import InstanceForm from './InstanceForm.svelte';
-  import Preferences from './Preferences.svelte';
+  import { overviewState, refreshOverview, watchOverview } from './overview-store.svelte';
   import RunItems from './RunItems.svelte';
 
   let { flowType }: { flowType: string } = $props();
 
-  /** 自动刷新间隔 */
-  const REFRESH_INTERVAL_MS = 10_000;
-
-  let overview = $state<IOverview | null>(null);
-  let runs = $state<IRunListItem[]>([]);
-  let isLoading = $state(true);
-  let errorText = $state<string | null>(null);
+  const overview = $derived(overviewState.value);
+  const isLoading = $derived(overviewState.isLoading);
+  /** 这个流程的最近运行；还没取到时为 null，先不显示「还没有运行」 */
+  let runs = $state.raw<IRunListItem[] | null>(null);
+  /** 最近运行没取到的原因；总览没取到的原因在 overviewState 里 */
+  let runsError = $state<string | null>(null);
+  const errorText = $derived(overviewState.errorText ?? runsError);
   let isCreating = $state(false);
+  /** 产品探索还没处理的想法数 */
+  const ideaCount = $derived(adminStatus.value?.agentIdeaCount ?? 0);
 
   const machines = $derived(overview?.machines ?? []);
   /** 报了这种流程的机器 */
@@ -48,32 +40,27 @@
   const instances = $derived((overview?.instances ?? []).filter((item) => item.flowType === flowType));
   const isSeries = $derived(SERIES_FLOWS.has(flowType));
   const title = $derived(flowTitle(machines, flowType));
-  /** 产品探索：实例设置里排的产品先后，产品偏好跟着这个排 */
-  const productOrder = $derived(instances.flatMap((item) => item.products ?? []).map((item) => item.name));
-  /** 运行列表里实例显示成仓库名 */
-  const instanceLabels = $derived(Object.fromEntries(instances.map((item) => [item.id, instanceLabel(item)])));
 
-  /** 加载总览与这个流程的最近运行；isSilent 时不显示加载中 */
-  async function load(isSilent = false): Promise<void> {
-    if (!isSilent) {
-      isLoading = true;
-    }
+  /** 加载这个流程的最近运行 */
+  async function loadRuns(): Promise<void> {
     try {
-      overview = await getOverview();
       // 旧版 hub 不认 flow 参数会返回全部运行，这里再按流程过滤一次
       runs = (await listRuns({ flow: flowType, limit: 8 })).runs.filter((run) => run.flowType === flowType);
-      errorText = null;
+      runsError = null;
     } catch (error) {
-      errorText = errorMessage(error);
-    } finally {
-      isLoading = false;
+      runsError = errorMessage(error);
     }
+  }
+
+  /** 手动刷新，或指令成功后刷新总览与最近运行；isSilent 时不显示加载中 */
+  async function load(isSilent = false): Promise<void> {
+    await Promise.all([refreshOverview({ isSilent, isFresh: true }), loadRuns()]);
   }
 
   /** 指令成功后刷新页面与侧栏角标 */
   async function afterCommand(): Promise<void> {
     await load(true);
-    refreshAdminStatus().catch(() => undefined);
+    refreshBadges();
   }
 
   /** 暂停或恢复整个流程：所有报了它的机器一起改 */
@@ -94,13 +81,15 @@
   }
 
   onMount(() => {
-    void load();
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void load(true);
+    // 最近运行和总览同时取；总览第一次刷新完不用再取一遍，之后每次刷新跟着取
+    void loadRuns();
+    let isFirstRefresh = true;
+    return watchOverview(() => {
+      if (!isFirstRefresh) {
+        void loadRuns();
       }
-    }, REFRESH_INTERVAL_MS);
-    return () => clearInterval(timer);
+      isFirstRefresh = false;
+    });
   });
 </script>
 
@@ -116,9 +105,9 @@
   {:else if flow === null && instances.length === 0}
     <p class="empty">没有「{title}」这种流程，或者 Mac 还没同步过来。</p>
   {:else}
-    <header class="page-header">
+    <header class="page-header wraps">
       <div class="page-title">
-        <div class="title-row">
+        <div class="inline-row title-row">
           <h1>{title}</h1>
           {#if isPaused}<span class="status status-neutral">已暂停</span>{/if}
         </div>
@@ -156,7 +145,7 @@
       <div class="section-header">
         <div class="section-title">
           <h2>仓库</h2>
-          <span class="section-count">{instances.length}</span>
+          <span class="pill">{instances.length}</span>
         </div>
         <button class="btn" type="button" onclick={() => (isCreating = true)} disabled={isCreating || flowMachines.length === 0}>新建</button>
       </div>
@@ -184,18 +173,19 @@
     {/if}
 
     {#if flowType === EXPLORE_FLOW}
-      <IdeaList />
-      <Preferences {productOrder} />
+      <a class="hint" href="/agents/ideas">
+        {ideaCount > 0 ? `${ideaCount} 条想法等你看` : '没有待看的想法'}，想法和产品偏好在「想法」里 →
+      </a>
     {/if}
 
     <div class="section-header">
       <h2>{flowType === IMPLEMENT_FLOW ? '运行' : '最近运行'}</h2>
       <a class="link" href="/agents/runs?flow={flowType}">全部 →</a>
     </div>
-    {#if runs.length === 0}
+    {#if runs !== null && runs.length === 0}
       <p class="empty">还没有运行</p>
-    {:else}
-      <RunItems {runs} {instanceLabels} />
+    {:else if runs !== null}
+      <RunItems {runs} />
     {/if}
   {/if}
 </section>
@@ -203,51 +193,16 @@
 <CommandToast />
 
 <style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    width: 100%;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px 24px 80px;
-  }
-
-  .back {
-    align-self: flex-start;
-    font-size: 13px;
-    transition: color 0.15s;
-  }
-
-  .back:hover {
-    color: var(--fg);
-  }
-
-  .page-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
   .page-title {
-    display: flex;
-    flex-direction: column;
     gap: 4px;
     min-width: 0;
   }
 
   .title-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
     gap: 10px;
   }
 
   .page-sub {
-    color: var(--muted);
-    font-size: 13px;
     overflow-wrap: anywhere;
   }
 
@@ -255,41 +210,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-
-  h1 {
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-
-  h2 {
-    font-size: 15px;
-    font-weight: 600;
-  }
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 4px;
-  }
-
-  .section-title {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
-
-  .section-count {
-    padding: 0 8px;
-    border-radius: 999px;
-    background: var(--chip-bg);
-    color: var(--muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    line-height: 20px;
   }
 
   .instances {
@@ -302,6 +222,7 @@
   }
 
   .hint {
+    display: block;
     padding: 10px 12px;
     border-radius: 8px;
     background: var(--surface-sunken);
@@ -313,12 +234,5 @@
   .link {
     color: var(--muted);
     font-size: 13px;
-    text-decoration: underline;
-  }
-
-  @media (max-width: 720px) {
-    .page {
-      padding: 16px 16px 80px;
-    }
   }
 </style>

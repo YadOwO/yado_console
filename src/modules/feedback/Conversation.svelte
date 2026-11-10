@@ -6,10 +6,11 @@
    */
   import { onMount, tick } from 'svelte';
 
-  import { refreshAdminStatus } from '../../lib/admin-status.svelte';
+  import { refreshBadges } from '../../lib/admin-status.svelte';
   import { productName } from '../../lib/config';
   import { formatFullTime, formatTime } from '../../lib/format';
   import { ApiError, errorMessage } from '../../lib/http';
+  import { pollWhileVisible } from '../../lib/poll';
   import {
     diagnosticKindLabel,
     getConversation,
@@ -222,7 +223,7 @@
     try {
       const updated = await updateTicketStatus(ticket.id, status);
       conversation.tickets = conversation.tickets.map((item) => (item.id === updated.id ? updated : item));
-      refreshAdminStatus().catch(() => undefined);
+      refreshBadges();
     } catch (error) {
       noticeError = errorMessage(error);
       if (error instanceof ApiError && error.status === 409) {
@@ -290,21 +291,7 @@
 
   onMount(() => {
     void loadInitial();
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void refreshLatest();
-      }
-    }, POLL_INTERVAL_MS);
-    const onVisible = (): void => {
-      if (document.visibilityState === 'visible') {
-        void refreshLatest();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
+    return pollWhileVisible(() => void refreshLatest(), POLL_INTERVAL_MS);
   });
 </script>
 
@@ -443,14 +430,6 @@
     gap: 8px 16px;
     padding: 16px 24px 8px;
     background: var(--surface);
-  }
-
-  .back {
-    font-size: 13px;
-  }
-
-  .back:hover {
-    color: var(--fg);
   }
 
   .who {
@@ -593,20 +572,7 @@
   }
 
   textarea {
-    width: 100%;
-    min-height: 72px;
-    max-height: 40vh;
-    padding: 8px 12px;
-    border: 1px solid var(--field-border);
     border-radius: var(--radius);
-    background: var(--field);
-    resize: vertical;
-    field-sizing: content;
-    transition: border-color 0.15s;
-  }
-
-  textarea:hover {
-    border-color: var(--line-strong);
   }
 
   .composer-bar {

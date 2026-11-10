@@ -3,11 +3,49 @@
  *
  * 页面少、结构固定，用一个函数按路径匹配即可；站内 <a> 的点击由 App 统一拦截后走 navigate，
  * 中键、⌘ 点击等仍按浏览器默认在新标签页打开。
+ *
+ * 每条历史记录上记着离开时的滚动位置，按浏览器的后退或页面上的「返回」回来时恢复，不用重新找刚才看到哪。
  */
 import { CALLBACK_PATH } from './auth';
 
-/** 当前地址；pathname 与 search 变化时，读取它的页面会重新渲染 */
-export const current = $state({ path: location.pathname, search: location.search });
+/**
+ * 当前地址；pathname 与 search 变化时，读取它的页面会重新渲染。
+ * scroll 是进这一页时该滚到的位置：新打开的页面是 0，按「返回」回来的是离开时的位置。
+ */
+export const current = $state({ path: location.pathname, search: location.search, scroll: 0 });
+
+/** 记在浏览器历史记录每一条上的东西 */
+interface IEntryState {
+  /** 是不是从站内点过来的；是的话「返回」可以直接退回上一页 */
+  isInApp: boolean;
+  /** 离开这一页时滚到了哪里 */
+  scroll: number;
+}
+
+/** 读当前这条历史记录上记的东西；不是我们写的（如直接打开的地址）按默认值 */
+function readEntry(): IEntryState {
+  const state: unknown = history.state;
+  if (typeof state !== 'object' || state === null) {
+    return { isInApp: false, scroll: 0 };
+  }
+  return {
+    isInApp: 'isInApp' in state && state.isInApp === true,
+    scroll: 'scroll' in state && typeof state.scroll === 'number' ? state.scroll : 0,
+  };
+}
+
+/** 读页面滚动位置的办法；滚动的是 App 里的内容区而不是整个文档，由 App 登记 */
+let readScroll: () => number = () => 0;
+
+/** 登记读页面滚动位置的办法 */
+export function setScrollReader(reader: () => number): void {
+  readScroll = reader;
+}
+
+/** 这一页是不是从站内点过来的：是的话「返回」退回上一页（位置和筛选都在），否则只能去固定的上级页面 */
+export function canGoBack(): boolean {
+  return readEntry().isInApp;
+}
 
 /** 管理端的页面 */
 export type Route =
@@ -16,6 +54,7 @@ export type Route =
   | { name: 'agents' }
   | { name: 'agentFlow'; flowType: string }
   | { name: 'agentInbox' }
+  | { name: 'agentIdeas' }
   | { name: 'agentRuns' }
   | { name: 'agentRun'; machineId: string; runId: string }
   | { name: 'agentLessons' }
@@ -37,8 +76,7 @@ const AGENT_PAGES: Record<string, Route> = {
   '/agents/inbox': { name: 'agentInbox' },
   '/agents/runs': { name: 'agentRuns' },
   '/agents/lessons': { name: 'agentLessons' },
-  // 想法原来是单独一页，现在在产品探索的流程页里；旧地址照样能开
-  '/agents/ideas': { name: 'agentFlow', flowType: 'explore' },
+  '/agents/ideas': { name: 'agentIdeas' },
 };
 
 /** 按路径匹配页面 */
@@ -69,7 +107,8 @@ export function matchRoute(path: string): Route {
 }
 
 /** 把浏览器地址同步到 current */
-function sync(): void {
+function sync(scroll: number): void {
+  current.scroll = scroll;
   current.path = location.pathname;
   current.search = location.search;
 }
@@ -82,11 +121,15 @@ function sync(): void {
  */
 export function navigate(url: string, options: { replace?: boolean } = {}): void {
   if (options.replace === true) {
-    history.replaceState(null, '', url);
-  } else {
-    history.pushState(null, '', url);
+    // 只换地址（如切换筛选），这条历史记录上记的东西照旧
+    history.replaceState(history.state, '', url);
+    sync(current.scroll);
+    return;
   }
-  sync();
+  // 离开前记下这一页滚到了哪里，按「返回」回来时恢复
+  history.replaceState({ ...readEntry(), scroll: readScroll() }, '');
+  history.pushState({ isInApp: true, scroll: 0 }, '', url);
+  sync(0);
 }
 
 /** 读取当前地址的查询参数；在 $derived 中调用时，地址变化会触发重新计算 */
@@ -104,7 +147,12 @@ export function handleLinkClick(event: MouseEvent): void {
     return;
   }
   event.preventDefault();
+  // 带 data-back 的是「返回」：从站内点过来的就退回上一页，直接打开的才去它写的上级页面
+  if (anchor.dataset.back !== undefined && canGoBack()) {
+    history.back();
+    return;
+  }
   navigate(anchor.pathname + anchor.search + anchor.hash);
 }
 
-addEventListener('popstate', sync);
+addEventListener('popstate', () => sync(readEntry().scroll));

@@ -74,7 +74,7 @@
 </script>
 
 <form class="form" onsubmit={submit}>
-  <label class="field has-hint">
+  <label class="form-row has-hint">
     <span>同时跑几个</span>
     <span class="control">
       <span class="inline">
@@ -88,7 +88,7 @@
     </span>
   </label>
   {#each ROLES as { role, label } (role)}
-    <label class="field" class:has-hint={ROLE_HINTS[role] !== undefined}>
+    <label class="form-row" class:has-hint={ROLE_HINTS[role] !== undefined}>
       <span>{label}模型</span>
       <span class="control">
         <select bind:value={models[role]}>
@@ -101,7 +101,7 @@
     </label>
   {/each}
   {#if thinkingModels.length > 0}
-    <div class="field thinking">
+    <div class="form-row thinking">
       <span>思考强度</span>
       <div class="thinking-list">
         {#each thinkingModels as model (model.id)}
@@ -117,7 +117,7 @@
       </div>
     </div>
   {/if}
-  <label class="field has-hint">
+  <label class="form-row has-hint">
     <span>材料保留</span>
     <span class="control">
       <span class="inline">
@@ -127,40 +127,12 @@
       <span class="hint">跑成功的运行，Mac 上的代码副本留几天再删。没成功的一直留着，等你处理。</span>
     </span>
   </label>
-  <div class="actions">
+  <div class="form-actions">
     <button class="btn btn-primary" type="submit" disabled={commandState.isBusy}>保存</button>
   </div>
 </form>
 
 <style>
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 16px;
-  }
-
-  .field {
-    display: grid;
-    grid-template-columns: 88px minmax(0, 1fr);
-    align-items: center;
-    gap: 12px;
-  }
-
-  .field > span:first-child {
-    color: var(--muted);
-  }
-
-  .inline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .narrow {
-    width: 80px;
-  }
-
   .control {
     display: flex;
     flex-direction: column;
@@ -205,19 +177,5 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 13px;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
-  }
-
-  @media (max-width: 720px) {
-    .field {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 4px;
-    }
   }
 </style>

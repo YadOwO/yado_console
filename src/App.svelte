@@ -4,14 +4,16 @@
    *
    * 侧栏按功能分组，每个功能覆盖全部产品，页面内再按产品筛选；以后加功能只需加一个导航项和对应页面。
    */
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
 
-  import { adminStatus, refreshAdminStatus } from './lib/admin-status.svelte';
+  import { adminStatus, refreshAdminStatus, refreshBadges } from './lib/admin-status.svelte';
   import { getDisplayName, handleSignInCallback, isAuthenticated, signIn, signOut } from './lib/auth';
   import { IS_AUTH_DEV_BYPASS, LOGTO_APP_ID } from './lib/config';
   import { errorMessage, isUnauthorized } from './lib/http';
-  import { current, handleLinkClick, matchRoute, navigate } from './lib/router.svelte';
+  import { pollWhileVisible } from './lib/poll';
+  import { current, handleLinkClick, matchRoute, navigate, setScrollReader } from './lib/router.svelte';
   import AgentFlow from './modules/agents/Flow.svelte';
+  import AgentIdeas from './modules/agents/Ideas.svelte';
   import AgentInbox from './modules/agents/Inbox.svelte';
   import AgentLessons from './modules/agents/Lessons.svelte';
   import AgentOverview from './modules/agents/Overview.svelte';
@@ -31,8 +33,11 @@
   let phase = $state<Phase>({ kind: 'loading' });
   /** 当前账号的显示名 */
   let displayName = $state('');
-  /** 页面滚动容器；切换页面时回到顶部 */
+  /** 页面滚动容器；新打开的页面回到顶部，按「返回」回来的恢复离开时的位置 */
   let main = $state<HTMLElement>();
+
+  /** 侧栏角标多久自己刷新一次；在 Agent 页面时待办数还会跟着总览更新，这里只是兜底 */
+  const STATUS_REFRESH_INTERVAL_MS = 60_000;
 
   const route = $derived(matchRoute(current.path));
   const pendingCount = $derived(adminStatus.value?.pendingTicketCount ?? 0);
@@ -70,20 +75,19 @@
 
   onMount(() => {
     void boot();
-    // 回到页面时刷新待处理数
-    const onVisible = (): void => {
-      if (document.visibilityState === 'visible' && phase.kind === 'ready') {
-        refreshAdminStatus().catch(() => undefined);
+    setScrollReader(() => main?.scrollTop ?? 0);
+    // 回到页面时刷新待处理数；页面一直开着时每分钟刷一次，有新反馈、新待办不用手动刷新才看得到
+    return pollWhileVisible(() => {
+      if (phase.kind === 'ready') {
+        refreshBadges();
       }
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    }, STATUS_REFRESH_INTERVAL_MS);
   });
 
-  // 换页面时回到顶部
+  // 换页面时：新打开的回到顶部，按「返回」回来的恢复离开时的位置
   $effect(() => {
     void current.path;
-    main?.scrollTo(0, 0);
+    main?.scrollTo(0, untrack(() => current.scroll));
   });
 </script>
 
@@ -142,6 +146,8 @@
         <AgentOverview />
       {:else if route.name === 'agentInbox'}
         <AgentInbox />
+      {:else if route.name === 'agentIdeas'}
+        <AgentIdeas />
       {:else if route.name === 'agentRuns'}
         <AgentRunList />
       {:else if route.name === 'agentRun'}
@@ -255,18 +261,6 @@
     opacity: 1;
   }
 
-  .badge {
-    min-width: 20px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--pending);
-    color: var(--on-pending);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    line-height: 20px;
-    text-align: center;
-  }
-
   .account {
     display: flex;
     align-items: center;
@@ -310,10 +304,6 @@
     overflow-y: auto;
     scrollbar-color: var(--line-strong) transparent;
     scrollbar-width: thin;
-  }
-
-  .link {
-    text-decoration: underline;
   }
 
   .gate {

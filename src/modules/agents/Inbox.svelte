@@ -8,20 +8,70 @@
    * 停下来的一次实现（Mac 判断能交给主审的，canDelegate）：「知道了」或「交给主审」，主审看停下的原因定处理办法，
    * 实现者照着改，都通过就推 feat 分支、作为新功能回到待办。其他运行只能「知道了」。
    * 等你点头的运行（发布计划待确认、发布要你确认、新功能改了项目规则要你确认）：看全文，同意或拒绝，可以写备注；页面不能改计划和命令。
-   * 处理都是发指令给 Mac，成功后从列表里消失。
+   *
+   * 待办按实例（仓库或系列文件夹）分组，组标题写仓库名和流程。页面打开期间每 10 秒自己刷新一次。
+   * 处理都是发指令给 Mac：点了就先从列表里拿掉，指令在后台发，可以接着处理下一条，不用等 Mac 回话；
+   * 没成功的那条会回到列表里，写明原因，写过的备注还在。
    */
   import { onMount } from 'svelte';
 
-  import { refreshAdminStatus } from '../../lib/admin-status.svelte';
   import { formatFullTime, formatTime } from '../../lib/format';
-  import { errorMessage } from '../../lib/http';
-  import { APPROVAL_NOTE_MAX, DELEGATE_NOTE_MAX, getOverview, runStatusClass, runStatusLabel, severityLabel, type IInboxItem } from './api';
-  import AgentTabs from './AgentTabs.svelte';
-  import { commandState, performCommand } from './command.svelte';
+  import {
+    APPROVAL_NOTE_MAX,
+    DELEGATE_NOTE_MAX,
+    flowTitle,
+    instanceLabel,
+    runStatusClass,
+    runStatusLabel,
+    severityLabel,
+    type IInboxItem,
+  } from './api';
+  import AgentPage from './AgentPage.svelte';
+  import { submitCommand } from './command.svelte';
+  import NotePanel from './NotePanel.svelte';
+  import { hideInboxItem, inboxKey, overviewState, refreshOverview, showInboxItem, visibleInbox, watchOverview } from './overview-store.svelte';
 
-  let items = $state<IInboxItem[]>([]);
-  let isLoading = $state(true);
-  let errorText = $state<string | null>(null);
+  /** 一组待办：同一个实例（仓库或系列文件夹）的 */
+  interface IInboxGroup {
+    key: string;
+    /** 仓库名或系列文件夹；实例已经删掉时是实例 ID */
+    title: string;
+    /** 流程的中文名；实例已经删掉时为 null */
+    flow: string | null;
+    items: IInboxItem[];
+  }
+
+  /** 要先写备注的处理：交给主审、同意、拒绝 */
+  type PanelMode = 'delegate' | 'approve' | 'reject';
+
+  /** 能对一条待办做的处理 */
+  type Action = 'wontfix' | 'done' | 'delegate' | 'approve' | 'reject';
+
+  /** 按实例分组，组和组内都保持 hub 给的先后 */
+  const groups = $derived.by(() => {
+    const overview = overviewState.value;
+    const result = new Map<string, IInboxGroup>();
+    for (const item of visibleInbox()) {
+      const key = `${item.machineId}/${item.instanceId}`;
+      let group = result.get(key);
+      if (group === undefined) {
+        const instance = overview?.instances.find((entry) => entry.machineId === item.machineId && entry.id === item.instanceId);
+        group = {
+          key,
+          title: instance === undefined ? item.instanceId : instanceLabel(instance),
+          flow: instance === undefined ? null : flowTitle(overview?.machines ?? [], instance.flowType),
+          items: [],
+        };
+        result.set(key, group);
+      }
+      group.items.push(item);
+    }
+    return [...result.values()];
+  });
+
+  /** 没处理成功的待办（按 inboxKey）：原因，和当时写的备注（重新打开时填回去） */
+  let failures = $state<Record<string, { text: string; note: string }>>({});
+
   /** 「交给主审」的说明 */
   const DELEGATE_HINT =
     '主审会看最新代码，在修和不修里选一个，不会再交回给你。选了修就照常修复、复审，通过了就推到开发分支；' +
@@ -57,12 +107,18 @@
     return isRescuable(item) ? RESCUE_DELEGATE_HINT : DELEGATE_HINT;
   }
 
-  /** 「交给主审」补充信息的提示 */
-  function delegatePlaceholder(item: IInboxItem): string {
-    if (isDoneFeature(item)) {
-      return '补充信息（可选）：比如你最担心哪里';
+  /** 备注框里的提示：交给主审是补充信息，同意或拒绝是备注 */
+  function notePlaceholder(item: IInboxItem, mode: PanelMode): string {
+    if (mode === 'delegate') {
+      if (isDoneFeature(item)) {
+        return '补充信息（可选）：比如你最担心哪里';
+      }
+      return isRescuable(item) ? '补充信息（可选）：比如那段内容写到哪里' : '补充信息（可选）：比如回答上面主审的问题';
     }
-    return isRescuable(item) ? '补充信息（可选）：比如那段内容写到哪里' : '补充信息（可选）：比如回答上面主审的问题';
+    if (isDoneFeature(item)) {
+      return '备注（可选）';
+    }
+    return mode === 'approve' ? '备注（可选）：比如先发哪个' : '备注（可选）：为什么不发';
   }
 
   /** 同意或拒绝后会怎样：按等你点头的种类和决定；新功能的「合」也走这里确认 */
@@ -81,290 +137,195 @@
       : '不做这件事，接着往下走；怎么走看运行记录。';
   }
 
-  /** 正在决定同意还是拒绝的待办，和选的决定 */
-  let decidingId = $state<string | null>(null);
-  let decision = $state<'approve' | 'reject'>('approve');
-
-  /** 打开同意或拒绝的确认 */
-  function openDecide(item: IInboxItem, value: 'approve' | 'reject'): void {
-    delegatingId = null;
-    decidingId = item.id;
-    decision = value;
-    note = '';
-  }
-
-  /** 同意或拒绝：Mac 上接着跑或取消 */
-  async function decide(item: IInboxItem): Promise<void> {
-    const text = note.trim();
-    const payload: { itemId: string; action: 'approve' | 'reject'; note?: string } = { itemId: item.id, action: decision };
-    if (text !== '') {
-      payload.note = text;
-    }
-    const label = isDoneFeature(item) ? '合进开发分支' : decision === 'approve' ? '同意' : '拒绝';
-    if (await performCommand(item.machineId, { type: 'inbox.resolve', payload }, label)) {
-      decidingId = null;
-      removeItem(item);
-    }
-  }
-
-  /** 正在填写「交给主审」的待办 */
-  let delegatingId = $state<string | null>(null);
+  /** 正在写备注的待办（按 inboxKey），和打算做的事：交给主审、同意或拒绝 */
+  let panel = $state<{ key: string; mode: PanelMode } | null>(null);
   let note = $state('');
 
-  /** 加载待办 */
-  async function load(): Promise<void> {
-    isLoading = true;
-    try {
-      items = (await getOverview()).inbox;
-      errorText = null;
-    } catch (error) {
-      errorText = errorMessage(error);
-    } finally {
-      isLoading = false;
+  /** 打开备注框；上次没处理成功的，把当时写的备注填回去 */
+  function openPanel(item: IInboxItem, mode: PanelMode): void {
+    const key = inboxKey(item);
+    panel = { key, mode };
+    note = failures[key]?.note ?? '';
+  }
+
+  /**
+   * 处理一条待办：先从列表里拿掉，指令在后台发。
+   * Mac 是先同步状态、再回报结果，所以成功后刷新一次总览，hub 上那条就没了；没成功就放回列表并写明原因。
+   */
+  async function send(item: IInboxItem, action: Action, label: string, noteText = ''): Promise<void> {
+    const key = inboxKey(item);
+    const payload: { itemId: string; action: Action; note?: string } = { itemId: item.id, action };
+    if (noteText !== '') {
+      payload.note = noteText;
     }
+    if (panel?.key === key) {
+      panel = null;
+    }
+    delete failures[key];
+    hideInboxItem(key);
+    const outcome = await submitCommand(item.machineId, { type: 'inbox.resolve', payload }, label);
+    if (outcome.isOk) {
+      await refreshOverview({ isFresh: true });
+    } else {
+      failures[key] = { text: outcome.text, note: noteText };
+    }
+    showInboxItem(key);
   }
 
-  /** 处理成功后从列表里去掉 */
-  function removeItem(item: IInboxItem): void {
-    items = items.filter((entry) => entry !== item);
-    refreshAdminStatus().catch(() => undefined);
-  }
-
-  /** 处理一条待办；新功能的 done 就是「不合」 */
-  async function resolve(item: IInboxItem, action: 'wontfix' | 'done'): Promise<void> {
+  /** 不修、已处理、知道了；新功能的 done 就是「不合」 */
+  function resolve(item: IInboxItem, action: 'wontfix' | 'done'): void {
     const label = action === 'wontfix' ? '标记不修' : isDoneFeature(item) ? '不合' : '标记已处理';
-    if (await performCommand(item.machineId, { type: 'inbox.resolve', payload: { itemId: item.id, action } }, label)) {
-      removeItem(item);
-    }
+    void send(item, action, label);
   }
 
-  /** 打开「交给主审」的补充信息 */
-  function openDelegate(item: IInboxItem): void {
-    decidingId = null;
-    delegatingId = item.id;
-    note = '';
+  /** 备注面板上面的说明：点了确定会怎样 */
+  function panelHint(item: IInboxItem, mode: PanelMode): string {
+    return mode === 'delegate' ? delegateHint(item) : decideHint(item, mode);
   }
 
-  /** 交给主审：Mac 上另开一次运行 */
-  async function delegate(item: IInboxItem): Promise<void> {
-    const text = note.trim();
-    const payload: { itemId: string; action: 'delegate'; note?: string } = { itemId: item.id, action: 'delegate' };
-    if (text !== '') {
-      payload.note = text;
+  /** 备注面板确定按钮上的字 */
+  function confirmLabel(item: IInboxItem, mode: PanelMode): string {
+    if (mode === 'delegate') {
+      return '交给主审';
     }
-    if (await performCommand(item.machineId, { type: 'inbox.resolve', payload }, '交给主审')) {
-      delegatingId = null;
-      removeItem(item);
-    }
+    return isDoneFeature(item) ? '确定合' : mode === 'approve' ? '确定同意' : '确定拒绝';
   }
 
-  onMount(() => {
-    void load();
-    refreshAdminStatus().catch(() => undefined);
-  });
+  /** 备注面板上点了确定：交给主审（Mac 上另开一次运行），同意或拒绝（Mac 上接着跑或取消；新功能的同意就是「合」） */
+  function confirmPanel(item: IInboxItem, mode: PanelMode): void {
+    const label = mode === 'delegate' ? '交给主审' : isDoneFeature(item) ? '合进开发分支' : mode === 'approve' ? '同意' : '拒绝';
+    void send(item, mode, label, note.trim());
+  }
+
+  onMount(() => watchOverview());
 </script>
 
-<section class="page">
-  <header class="page-header">
-    <div class="page-title">
-      <h1>Agent</h1>
-      <p class="page-sub">主审交给你的问题、等你点头的发布，和需要你看一下的运行</p>
-    </div>
-    <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
-  </header>
-  <AgentTabs active="inbox" />
+<AgentPage active="inbox" sub="主审交给你的问题、等你点头的发布，和需要你看一下的运行">
+  {#snippet actions()}
+    <button class="btn" type="button" onclick={() => void refreshOverview({ isSilent: false })} disabled={overviewState.isLoading}
+      >刷新</button
+    >
+  {/snippet}
 
-  {#if errorText !== null}
-    <p class="error-banner">{errorText}</p>
+  {#if overviewState.errorText !== null}
+    <p class="error-banner">{overviewState.errorText}</p>
   {/if}
 
-  {#if isLoading && items.length === 0}
-    <p class="empty">加载中…</p>
-  {:else if items.length === 0 && errorText === null}
+  {#if overviewState.value === null}
+    {#if overviewState.errorText === null}<p class="empty">加载中…</p>{/if}
+  {:else if groups.length === 0}
     <p class="empty">没有待办</p>
   {:else}
-    <ul class="items">
-      {#each items as item (`${item.machineId}/${item.id}`)}
-        <li
-          class="item"
-          class:tone-pending={item.kind === 'finding' ||
-            item.runStatus === 'needs_attention' ||
-            item.runStatus === 'waiting' ||
-            isDoneFeature(item)}
-          class:tone-danger={item.runStatus === 'failed' || item.runStatus === 'interrupted'}
-        >
-          <div class="meta">
-            {#if item.kind === 'finding'}
-              <span class="status status-pending">要你决定</span>
-              {#if item.severity !== null}<span class="tag">{severityLabel(item.severity)}</span>{/if}
-            {:else if item.runStatus === 'waiting'}
-              <span class="status status-pending">等你点头</span>
-            {:else if isDoneFeature(item)}
-              <span class="status status-pending">新功能</span>
-            {:else if item.runStatus !== null}
-              <span class={runStatusClass(item.runStatus)}>运行{runStatusLabel(item.runStatus)}</span>
-            {/if}
-            <a class="muted run-link" href="/agents/runs/{item.machineId}/{item.runId}">{item.instanceId}</a>
-            <time class="muted time" datetime={item.createdAt} title={formatFullTime(item.createdAt)}>{formatTime(item.createdAt)}</time>
-          </div>
-          <p class="title">{item.title}</p>
-          {#if item.location !== null}<p class="mono muted location">{item.location}</p>{/if}
-          {#if item.detail !== null}<p class="detail">{item.detail}</p>{/if}
-          {#if item.approvalText !== null}
-            <details class="approval" open>
-              <summary>{item.approvalKind === 'plan' ? '发布计划全文' : '要你确认的事'}</summary>
-              <pre class="mono">{item.approvalText}</pre>
-            </details>
-          {/if}
-          {#if decidingId === item.id}
-            <div class="delegate">
-              <p class="muted hint">{decideHint(item, decision)}</p>
-              <textarea
-                bind:value={note}
-                rows="2"
-                maxlength={APPROVAL_NOTE_MAX}
-                placeholder={isDoneFeature(item)
-                  ? '备注（可选）'
-                  : decision === 'approve'
-                    ? '备注（可选）：比如先发哪个'
-                    : '备注（可选）：为什么不发'}
-                aria-label="同意或拒绝的备注"
-              ></textarea>
-              <div class="actions">
-                <button class="btn" type="button" onclick={() => (decidingId = null)}>取消</button>
-                <button
-                  class="btn"
-                  class:btn-primary={decision === 'approve'}
-                  type="button"
-                  disabled={commandState.isBusy}
-                  onclick={() => void decide(item)}
-                  >{isDoneFeature(item) ? '确定合' : decision === 'approve' ? '确定同意' : '确定拒绝'}</button
-                >
-              </div>
-            </div>
-          {:else if delegatingId === item.id}
-            <div class="delegate">
-              <p class="muted hint">{delegateHint(item)}</p>
-              <textarea
-                bind:value={note}
-                rows="3"
-                maxlength={DELEGATE_NOTE_MAX}
-                placeholder={delegatePlaceholder(item)}
-                aria-label="补充给主审的信息"
-              ></textarea>
-              <div class="actions">
-                <button class="btn" type="button" onclick={() => (delegatingId = null)}>取消</button>
-                <button class="btn btn-primary" type="button" disabled={commandState.isBusy} onclick={() => void delegate(item)}
-                  >交给主审</button
-                >
-              </div>
-            </div>
-          {:else}
-            <div class="actions">
+    {#each groups as group (group.key)}
+      <div class="group-head">
+        <h2>{group.title}</h2>
+        {#if group.flow !== null}<span class="tag">{group.flow}</span>{/if}
+        <span class="muted group-count">{group.items.length} 条</span>
+      </div>
+      <ul class="items">
+        {#each group.items as item (inboxKey(item))}
+          {@const key = inboxKey(item)}
+          <li
+            class="item card bar"
+            class:tone-pending={item.kind === 'finding' ||
+              item.runStatus === 'needs_attention' ||
+              item.runStatus === 'waiting' ||
+              isDoneFeature(item)}
+            class:tone-danger={item.runStatus === 'failed' || item.runStatus === 'interrupted'}
+          >
+            <div class="inline-row">
               {#if item.kind === 'finding'}
-                <button
-                  class="btn"
-                  type="button"
-                  title="加进不修清单，以后同样的问题不再提"
-                  disabled={commandState.isBusy}
-                  onclick={() => void resolve(item, 'wontfix')}>不修</button
-                >
-                <button
-                  class="btn"
-                  type="button"
-                  title="让主审（Opus）看最新代码，在修和不修里选一个"
-                  disabled={commandState.isBusy}
-                  onclick={() => openDelegate(item)}>交给主审</button
-                >
-                <button
-                  class="btn btn-primary"
-                  type="button"
-                  title="你已经处理了，或者决定不管"
-                  disabled={commandState.isBusy}
-                  onclick={() => void resolve(item, 'done')}>已处理</button
-                >
+                <span class="status status-pending">要你决定</span>
+                {#if item.severity !== null}<span class="tag">{severityLabel(item.severity)}</span>{/if}
               {:else if item.runStatus === 'waiting'}
-                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'reject')}
-                  >拒绝</button
-                >
-                <button class="btn btn-primary" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'approve')}
-                  >同意</button
-                >
+                <span class="status status-pending">等你点头</span>
               {:else if isDoneFeature(item)}
-                <button
-                  class="btn"
-                  type="button"
-                  title="不进开发分支，feat 分支留着"
-                  disabled={commandState.isBusy}
-                  onclick={() => void resolve(item, 'done')}>不合</button
-                >
-                <button
-                  class="btn"
-                  type="button"
-                  title="让主审（Opus）看需求和改动，判合不合"
-                  disabled={commandState.isBusy}
-                  onclick={() => openDelegate(item)}>交给主审</button
-                >
-                <button class="btn btn-primary" type="button" disabled={commandState.isBusy} onclick={() => openDecide(item, 'approve')}
-                  >合</button
-                >
-              {:else if isRescuable(item)}
-                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void resolve(item, 'done')}
-                  >知道了</button
-                >
-                <button
-                  class="btn btn-primary"
-                  type="button"
-                  title="让主审（Opus）看停下的原因，定处理办法，实现者照着改完接着推"
-                  disabled={commandState.isBusy}
-                  onclick={() => openDelegate(item)}>交给主审</button
-                >
-              {:else}
-                <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void resolve(item, 'done')}
-                  >知道了</button
-                >
+                <span class="status status-pending">新功能</span>
+              {:else if item.runStatus !== null}
+                <span class={runStatusClass(item.runStatus)}>运行{runStatusLabel(item.runStatus)}</span>
               {/if}
+              <a class="muted link" href="/agents/runs/{item.machineId}/{item.runId}">看这次运行</a>
+              <time class="muted time" datetime={item.createdAt} title={formatFullTime(item.createdAt)}>{formatTime(item.createdAt)}</time>
             </div>
-          {/if}
-        </li>
-      {/each}
-    </ul>
+            <p class="title">{item.title}</p>
+            {#if item.location !== null}<p class="mono muted location">{item.location}</p>{/if}
+            {#if item.detail !== null}<p class="detail">{item.detail}</p>{/if}
+            {#if item.approvalText !== null}
+              <details class="approval" open>
+                <summary>{item.approvalKind === 'plan' ? '发布计划全文' : '要你确认的事'}</summary>
+                <pre class="mono">{item.approvalText}</pre>
+              </details>
+            {/if}
+            {#if failures[key] !== undefined}
+              <p class="error-banner">没处理成功，这条还在。{failures[key].text}</p>
+            {/if}
+            {#if panel !== null && panel.key === key}
+              {@const mode = panel.mode}
+              <NotePanel
+                bind:note
+                hint={panelHint(item, mode)}
+                placeholder={notePlaceholder(item, mode)}
+                label={mode === 'delegate' ? '补充给主审的信息' : '同意或拒绝的备注'}
+                maxlength={mode === 'delegate' ? DELEGATE_NOTE_MAX : APPROVAL_NOTE_MAX}
+                rows={mode === 'delegate' ? 3 : 2}
+                confirmLabel={confirmLabel(item, mode)}
+                isPrimary={mode !== 'reject'}
+                onCancel={() => (panel = null)}
+                onConfirm={() => confirmPanel(item, mode)}
+              />
+            {:else}
+              <div class="btn-row">
+                {#if item.kind === 'finding'}
+                  <button class="btn" type="button" title="加进不修清单，以后同样的问题不再提" onclick={() => resolve(item, 'wontfix')}
+                    >不修</button
+                  >
+                  <button
+                    class="btn"
+                    type="button"
+                    title="让主审（Opus）看最新代码，在修和不修里选一个"
+                    onclick={() => openPanel(item, 'delegate')}>交给主审</button
+                  >
+                  <button class="btn btn-primary" type="button" title="你已经处理了，或者决定不管" onclick={() => resolve(item, 'done')}
+                    >已处理</button
+                  >
+                {:else if item.runStatus === 'waiting'}
+                  <button class="btn" type="button" onclick={() => openPanel(item, 'reject')}>拒绝</button>
+                  <button class="btn btn-primary" type="button" onclick={() => openPanel(item, 'approve')}>同意</button>
+                {:else if isDoneFeature(item)}
+                  <button class="btn" type="button" title="不进开发分支，feat 分支留着" onclick={() => resolve(item, 'done')}>不合</button>
+                  <button class="btn" type="button" title="让主审（Opus）看需求和改动，判合不合" onclick={() => openPanel(item, 'delegate')}
+                    >交给主审</button
+                  >
+                  <button class="btn btn-primary" type="button" onclick={() => openPanel(item, 'approve')}>合</button>
+                {:else if isRescuable(item)}
+                  <button class="btn" type="button" onclick={() => resolve(item, 'done')}>知道了</button>
+                  <button
+                    class="btn btn-primary"
+                    type="button"
+                    title="让主审（Opus）看停下的原因，定处理办法，实现者照着改完接着推"
+                    onclick={() => openPanel(item, 'delegate')}>交给主审</button
+                  >
+                {:else}
+                  <button class="btn" type="button" onclick={() => resolve(item, 'done')}>知道了</button>
+                {/if}
+              </div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/each}
   {/if}
-</section>
+</AgentPage>
 
 <style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    width: 100%;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px 24px 80px;
+  /* 组标题：仓库名 + 流程 + 条数 */
+  .group-head {
+    flex-wrap: wrap;
+    margin-top: 4px;
   }
 
-  .page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .page-title {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .page-sub {
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  h1 {
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
+  .group-count {
+    font-size: 12px;
   }
 
   .items {
@@ -376,48 +337,12 @@
     list-style: none;
   }
 
+  /* 左侧色条（.bar）：橙=要你决定，红=运行失败或被中断 */
   .item {
-    position: relative;
     display: flex;
     flex-direction: column;
     gap: 7px;
     padding: 14px 16px 12px 20px;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-  }
-
-  /* 左侧色条：橙=要你决定，红=运行失败或被中断 */
-  .item::before {
-    position: absolute;
-    top: 14px;
-    bottom: 14px;
-    left: 0;
-    width: 3px;
-    background: var(--line-strong);
-    content: '';
-  }
-
-  .item.tone-pending::before {
-    background: var(--pending);
-  }
-
-  .item.tone-danger::before {
-    background: var(--danger);
-  }
-
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .run-link {
-    text-decoration: underline;
-    overflow-wrap: anywhere;
   }
 
   .time {
@@ -467,53 +392,5 @@
     line-height: 1.6;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  .delegate {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 2px;
-    padding: 12px;
-    border-radius: 10px;
-    background: var(--surface-sunken);
-  }
-
-  .hint {
-    font-size: 12px;
-  }
-
-  textarea {
-    width: 100%;
-    min-height: 72px;
-    max-height: 40vh;
-    padding: 8px 12px;
-    border: 1px solid var(--field-border);
-    border-radius: 8px;
-    background: var(--field);
-    resize: vertical;
-    field-sizing: content;
-    transition: border-color 0.15s;
-  }
-
-  textarea:hover {
-    border-color: var(--line-strong);
-  }
-
-  @media (max-width: 720px) {
-    .page {
-      padding: 16px 16px 80px;
-    }
-
-    .actions {
-      justify-content: flex-start;
-    }
   }
 </style>
