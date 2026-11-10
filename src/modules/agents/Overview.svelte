@@ -3,7 +3,7 @@
    * Agent 总览：机器状态、待办提醒、各流程一张卡（实例数、下次运行、上次运行；点进去看实例、运行和流程自己的东西）、全局设置。
    *
    * 页面可见时每 10 秒从 hub 刷新一次。hub 上的数据是 Mac 最近一次上传时的状态（有新动态时约 2～7 秒内，否则一小时一次），
-   * 「立即同步」让 Mac 马上传一次。点机器上的「运行中 · 排队」展开看具体是哪些运行，展开时跟着一起刷新。
+   * 「立即同步」让 Mac 马上传一次。点机器上的「运行中 · 排队 · 等你点头」展开看具体是哪些运行，展开时跟着一起刷新。
    */
   import { onMount } from 'svelte';
 
@@ -57,7 +57,7 @@
 
   /** 展开了运行中与排队列表的机器 */
   let expandedMachineId = $state<string | null>(null);
-  /** 展开的机器上还没结束的运行：运行中在前，排队的按先来后到 */
+  /** 展开的机器上还没结束的运行：运行中在前，排队的按先来后到，等你点头的最后 */
   let activeRuns = $state<IRunListItem[] | null>(null);
   let activeError = $state<string | null>(null);
   /** 每次加载递增；收起或换机器后丢弃旧请求的结果 */
@@ -68,16 +68,20 @@
     return Object.fromEntries(machine.flows.map((item) => [item.type, item.title]));
   }
 
-  /** 加载某台机器运行中与排队的运行；运行列表不能按机器筛，取回来再挑 */
+  /** 加载某台机器运行中、排队和等你点头的运行；运行列表不能按机器筛，取回来再挑 */
   async function loadActive(machineId: string): Promise<void> {
     const version = ++activeVersion;
     try {
-      const [running, queued] = await Promise.all([listRuns({ status: 'running' }), listRuns({ status: 'queued' })]);
+      const [running, queued, waiting] = await Promise.all([
+        listRuns({ status: 'running' }),
+        listRuns({ status: 'queued' }),
+        listRuns({ status: 'waiting' }),
+      ]);
       if (version !== activeVersion) {
         return;
       }
       const queuedOldestFirst = [...queued.runs].sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
-      activeRuns = [...running.runs, ...queuedOldestFirst].filter((run) => run.machineId === machineId);
+      activeRuns = [...running.runs, ...queuedOldestFirst, ...waiting.runs].filter((run) => run.machineId === machineId);
       activeError = null;
     } catch (error) {
       if (version === activeVersion) {
@@ -86,7 +90,7 @@
     }
   }
 
-  /** 展开或收起某台机器的运行中与排队列表 */
+  /** 展开或收起某台机器的运行中、排队与等你点头列表 */
   function toggleActive(machineId: string): void {
     activeRuns = null;
     activeError = null;
@@ -186,7 +190,7 @@
   <header class="page-header">
     <div class="page-title">
       <h1>Agent</h1>
-      <p class="page-sub">Mac 上的自动 review、清理、产品探索与一次实现</p>
+      <p class="page-sub">Mac 上的自动 review、清理、产品探索、一次实现与发布</p>
     </div>
     <button class="btn" type="button" onclick={() => void load()} disabled={isLoading}>刷新</button>
   </header>
@@ -217,7 +221,9 @@
             aria-expanded={expandedMachineId === machine.id}
             onclick={() => toggleActive(machine.id)}
           >
-            运行中 {machine.health.activeRuns} · 排队 {machine.health.queuedRuns}
+            运行中 {machine.health.activeRuns} · 排队 {machine.health.queuedRuns}{machine.health.waitingRuns > 0
+              ? ` · 等你点头 ${machine.health.waitingRuns}`
+              : ''}
           </button>
         {/if}
         <button class="btn sync" type="button" disabled={commandState.isBusy} onclick={() => void syncNow(machine)}>立即同步</button>
@@ -231,7 +237,7 @@
         {:else if activeRuns === null}
           <p class="active-empty">加载中…</p>
         {:else if activeRuns.length === 0}
-          <p class="active-empty">现在没有运行中或排队的运行</p>
+          <p class="active-empty">现在没有运行中、排队或等你点头的运行</p>
         {:else}
           <RunItems runs={activeRuns} {instanceLabels} flowTitles={flowTitlesOf(machine)} />
         {/if}

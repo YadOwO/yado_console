@@ -54,6 +54,8 @@ export type RunStatus =
 /** 运行的一步 */
 export interface IStep {
   key: string;
+  /** 步骤的中文名；旧版 agentd 不传，为 null 时显示 key */
+  label: string | null;
   /** agentd 自己做的（agentd）或调用模型的（model） */
   kind: string;
   round: number;
@@ -110,6 +112,10 @@ interface IRunBase {
   acknowledgedAt: string | null;
   /** 交给主审的运行：那个问题所在的运行 */
   delegatedFrom: string | null;
+  /** 这次做什么：一次实现的需求标题、交给主审的问题、发哪些仓库等；定时的 review、清理、探索和旧版 agentd 为 null */
+  topic: string | null;
+  /** 现在在干什么：运行中是当前步骤，排队中是在等什么；结束了或旧版 agentd 为 null */
+  activity: string | null;
 }
 
 /** 运行列表里的一项 */
@@ -357,7 +363,8 @@ export interface IMachine {
   /** 最近 3 分钟内联系过 hub（领指令或同步） */
   isOnline: boolean;
   lastSeenAt: string;
-  health: { status: 'ok' | 'degraded'; detail: string; activeRuns: number; queuedRuns: number } | null;
+  /** waitingRuns 是等你点头的运行数（不占名额） */
+  health: { status: 'ok' | 'degraded'; detail: string; activeRuns: number; queuedRuns: number; waitingRuns: number } | null;
   settings: ISettings | null;
   /** 可选的模型 */
   models: string[];
@@ -621,13 +628,23 @@ export function compactNumber(value: number): string {
   return value >= 1000 ? `${Math.round(value / 1000)}k` : String(value);
 }
 
-/** 两个时刻之间的时长，如 9 分钟、45 秒 */
+/** 两个时刻之间的时长，如 45 秒、9 分钟、2 小时 22 分钟 */
 export function durationText(from: string | null, to: string | null): string {
   if (from === null || to === null) {
     return '';
   }
   const seconds = Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000));
-  return seconds < 60 ? `${seconds} 秒` : `${Math.round(seconds / 60)} 分钟`;
+  if (seconds < 60) {
+    return `${seconds} 秒`;
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} 分钟`;
+  }
+  // 发布、一次实现常跑一两个小时，「142 分钟」不好读
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分钟`;
 }
 
 /** 流程类型的中文名，机器没报（旧版 agentd 或还没同步）时用 */
@@ -636,6 +653,7 @@ const FLOW_TITLES: Record<string, string> = {
   cleanup: '代码清理',
   [IMPLEMENT_FLOW]: '一次实现',
   [EXPLORE_FLOW]: '产品探索',
+  release: '发布',
 };
 
 /** 流程类型的中文名：以机器报上来的为准 */

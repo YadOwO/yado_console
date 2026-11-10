@@ -12,7 +12,10 @@
   import {
     compactNumber,
     durationText,
+    flowTitle,
+    getOverview,
     getRun,
+    instanceLabel,
     isRunActive,
     runStatusClass,
     runStatusLabel,
@@ -56,6 +59,22 @@
 
   let run = $state<IRunDetail | null>(null);
   let errorText = $state<string | null>(null);
+  /** 标题：流程名 · 实例在页面上的名字（和列表一致）；总览还没取到时为 null，先显示实例 ID */
+  let title = $state<string | null>(null);
+  /** 标题只取一次：运行没结束时详情每 5 秒刷新，不跟着重复取总览 */
+  let isTitleRequested = false;
+
+  /** 取一次总览拼标题；取不到就一直显示实例 ID，不报错 */
+  async function loadTitle(detail: IRunDetail): Promise<void> {
+    try {
+      const overview = await getOverview();
+      const instance = overview.instances.find((item) => item.machineId === machineId && item.id === detail.instanceId);
+      const name = instance === undefined ? detail.instanceId : instanceLabel(instance);
+      title = `${flowTitle(overview.machines, detail.flowType)} · ${name}`;
+    } catch {
+      title = null;
+    }
+  }
 
   const groups = $derived(
     GROUPS.map((group) => ({
@@ -69,6 +88,10 @@
     try {
       run = await getRun(machineId, runId);
       errorText = null;
+      if (!isTitleRequested) {
+        isTitleRequested = true;
+        void loadTitle(run);
+      }
     } catch (error) {
       errorText = errorMessage(error);
     }
@@ -130,14 +153,22 @@
   {:else}
     <header class="head">
       <div class="title-row">
-        <h1>{run.instanceId}</h1>
+        <h1 title={run.instanceId}>{title ?? run.instanceId}</h1>
         <span class={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
         {#if isRunActive(run.status)}
           <button class="btn danger" type="button" disabled={commandState.isBusy} onclick={() => void cancel()}>取消</button>
         {/if}
       </div>
       <p class="meta-line muted" title={formatFullTime(run.queuedAt)}><span class="mono">{run.id}</span> · {metaText(run)}</p>
+      {#if run.topic !== null}<p class="topic-line">{run.topic}</p>{/if}
     </header>
+
+    {#if (isRunActive(run.status) || run.status === 'waiting') && run.activity !== null}
+      <div class="card">
+        <span class="card-label">{run.status === 'queued' ? '在等什么' : '现在'}</span>
+        <p class="summary-text">{run.activity}</p>
+      </div>
+    {/if}
 
     {#if run.summary !== null || run.reason !== null}
       <div class="card summary-card tone-{statusTone(run.status)}">
@@ -197,7 +228,7 @@
       {#each run.steps as step (step.key)}
         <li class="step">
           <span class="step-dot {step.status}"></span>
-          <span class="mono step-key">{step.key}</span>
+          <span class="step-key" class:mono={step.label === null} title={step.key}>{step.label ?? step.key}</span>
           <span class="step-model muted">{step.model ?? ''}</span>
           <span class={step.status === 'failed' ? 'status status-danger' : step.status === 'running' ? 'status status-neutral' : 'muted'}>
             {step.status === 'succeeded' ? durationText(step.startedAt, step.finishedAt) : step.status === 'failed' ? '失败' : '进行中'}
@@ -268,6 +299,10 @@
 
   .meta-line {
     font-size: 12px;
+  }
+
+  .topic-line {
+    overflow-wrap: anywhere;
   }
 
   .btn.danger {

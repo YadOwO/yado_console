@@ -1,6 +1,7 @@
 <script lang="ts">
   /**
-   * 一台机器的全局设置：同时最多跑几个、各角色默认模型、各模型的思考强度、运行材料保留天数。
+   * 一台机器的全局设置：同时跑几次运行、各角色默认模型、各模型的思考强度、运行材料保留天数。
+   * 名字说不清的字段下面带一句说明。
    *
    * 只把改动过的字段发给 Mac。暂停整个流程在各流程页上做；检查命令、可推送的分支等安全相关的配置只能在 Mac 上改。
    */
@@ -13,6 +14,13 @@
 
   // 只在打开时取一次初始值，之后总览刷新不会冲掉正在编辑的内容
   const initial = untrack(() => settings);
+
+  /** 各角色模型下面的一句说明：角色名本身说不清的才写 */
+  const ROLE_HINTS: Partial<Record<Role, string>> = {
+    reviewer: 'review、清理里找问题和复审',
+    lead: '判断、写方案、写发布计划，整次运行都用它',
+    fixer: '按主审的说明改代码；一次实现里写代码也用它',
+  };
 
   let maxConcurrentRuns = $state(initial.maxConcurrentRuns);
   let retentionDays = $state(initial.retentionDays);
@@ -66,21 +74,30 @@
 </script>
 
 <form class="form" onsubmit={submit}>
-  <label class="field">
-    <span>同时最多跑</span>
-    <span class="inline">
-      <input class="narrow" type="number" min="1" max="8" bind:value={maxConcurrentRuns} />
-      <span class="muted">个</span>
+  <label class="field has-hint">
+    <span>同时跑几个</span>
+    <span class="control">
+      <span class="inline">
+        <input class="narrow" type="number" min="1" max="8" bind:value={maxConcurrentRuns} />
+        <span class="muted">次运行</span>
+      </span>
+      <span class="hint">
+        review、清理、探索、一次实现、发布加起来，最多同时跑几次，多出来的排队。等你点头的不占名额；
+        同一个仓库一次只跑一个，所以没满也可能要等。
+      </span>
     </span>
   </label>
   {#each ROLES as { role, label } (role)}
-    <label class="field">
+    <label class="field" class:has-hint={ROLE_HINTS[role] !== undefined}>
       <span>{label}模型</span>
-      <select bind:value={models[role]}>
-        {#each [...new Set([...machine.models, models[role]])] as model (model)}
-          <option value={model}>{model}</option>
-        {/each}
-      </select>
+      <span class="control">
+        <select bind:value={models[role]}>
+          {#each [...new Set([...machine.models, models[role]])] as model (model)}
+            <option value={model}>{model}</option>
+          {/each}
+        </select>
+        {#if ROLE_HINTS[role] !== undefined}<span class="hint">{ROLE_HINTS[role]}</span>{/if}
+      </span>
     </label>
   {/each}
   {#if thinkingModels.length > 0}
@@ -100,11 +117,14 @@
       </div>
     </div>
   {/if}
-  <label class="field">
+  <label class="field has-hint">
     <span>材料保留</span>
-    <span class="inline">
-      <input class="narrow" type="number" min="1" max="90" bind:value={retentionDays} />
-      <span class="muted">天</span>
+    <span class="control">
+      <span class="inline">
+        <input class="narrow" type="number" min="1" max="90" bind:value={retentionDays} />
+        <span class="muted">天</span>
+      </span>
+      <span class="hint">跑成功的运行，Mac 上的代码副本留几天再删。没成功的一直留着，等你处理。</span>
     </span>
   </label>
   <div class="actions">
@@ -139,6 +159,28 @@
 
   .narrow {
     width: 80px;
+  }
+
+  .control {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  /* 带说明的字段：左边的名字和输入框顶端对齐，不和说明一起居中 */
+  .has-hint {
+    align-items: start;
+  }
+
+  .has-hint > span:first-child {
+    padding-top: 7px;
+  }
+
+  .hint {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   .thinking {
