@@ -667,6 +667,17 @@ export function flowTitle(machines: IMachine[], flowType: string): string {
   return FLOW_TITLES[flowType] ?? flowType;
 }
 
+/** 流程的模式标记：review、代码清理复审通过就推到开发分支，一次实现推新分支，产品探索只出想法；tone 对应 app.css 的 .status-* */
+export function flowBadge(flowType: string): { label: string; tone: string } {
+  if (flowType === IMPLEMENT_FLOW) {
+    return { label: '推新分支', tone: 'resolved' };
+  }
+  if (flowType === EXPLORE_FLOW) {
+    return { label: '只出想法', tone: 'info' };
+  }
+  return { label: '推送', tone: 'resolved' };
+}
+
 /** 实例在页面上的名字：仓库实例只写仓库名（不带 owner），挂系列文件夹的写文件夹 */
 export function instanceLabel(instance: IInstance): string {
   if (SERIES_FLOWS.has(instance.flowType)) {

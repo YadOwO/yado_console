@@ -82,7 +82,7 @@ Mac 上的 agentd（[yado_agents](../../yado_agents)）跑四种自动流程：�
 | 页面外壳 | `agents/AgentPage.svelte` | Agent 五个标签页的标题、说明、右上角控件和标签栏 |
 | 规则列表 | `agents/RuleList.svelte` | 经验和产品偏好：按组列出，作废 / 恢复 |
 | 备注面板 | `agents/NotePanel.svelte` | 待办和想法处理前写备注：说明、备注框、取消与确定 |
-| 运行列表 | `agents/RunItems.svelte` | 总览、流程页、运行记录里的运行列表 |
+| 运行列表 | `agents/RunItems.svelte` | 总览、流程页、运行记录里的运行列表；`isCompact` 一条一行（流程页用） |
 | 总览数据 | `agents/overview-store.svelte.ts` | 各页面共用的一份总览，带实例名、流程名的对照表 |
 | 定时刷新 | `lib/poll.ts` | 页面可见时定时做一件事，切回页面时补一次 |
 | 刷新角标 | `lib/admin-status.svelte.ts` 的 `refreshBadges` | 数据变了之后顺手刷新侧栏的数字 |

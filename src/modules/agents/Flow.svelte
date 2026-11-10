@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * 一个流程的页面：这类流程的说明与整体暂停、它的实例（仓库流程可以在这里新建）、最近运行。从总览的流程卡进来。
+   * 一个流程的页面：这类流程的说明、模式与整体暂停、它的实例（一个一行，仓库流程可以在这里新建）、最近运行。从总览的流程卡进来。
    * 产品探索的想法与产品偏好在顶部标签的「想法」里，这里只留一个入口。
    *
    * 总览数据是各页面共用的一份，进来先显示上次取到的；页面可见时每 10 秒刷新一次，最近运行跟着刷新。
@@ -10,11 +10,11 @@
 
   import { adminStatus, refreshBadges } from '../../lib/admin-status.svelte';
   import { errorMessage } from '../../lib/http';
-  import { EXPLORE_FLOW, flowTitle, IMPLEMENT_FLOW, listRuns, SERIES_FLOWS, type IRunListItem } from './api';
+  import { EXPLORE_FLOW, flowBadge, flowTitle, IMPLEMENT_FLOW, listRuns, SERIES_FLOWS, type IRunListItem } from './api';
   import { commandState, performCommand } from './command.svelte';
   import CommandToast from './CommandToast.svelte';
-  import InstanceCard from './InstanceCard.svelte';
   import InstanceForm from './InstanceForm.svelte';
+  import InstanceRow from './InstanceRow.svelte';
   import { overviewState, refreshOverview, watchOverview } from './overview-store.svelte';
   import RunItems from './RunItems.svelte';
 
@@ -40,6 +40,8 @@
   const instances = $derived((overview?.instances ?? []).filter((item) => item.flowType === flowType));
   const isSeries = $derived(SERIES_FLOWS.has(flowType));
   const title = $derived(flowTitle(machines, flowType));
+  /** 模式标记：整个流程都一样，写在标题旁边 */
+  const badge = $derived(flowBadge(flowType));
 
   /** 加载这个流程的最近运行 */
   async function loadRuns(): Promise<void> {
@@ -110,6 +112,7 @@
         <div class="inline-row title-row">
           <h1>{title}</h1>
           {#if isPaused}<span class="status status-neutral">已暂停</span>{/if}
+          <span class="status status-{badge.tone}">{badge.label}</span>
         </div>
         {#if flow !== null}<p class="page-sub">{flow.description}</p>{/if}
       </div>
@@ -129,9 +132,9 @@
           还没有实例。挂本机的系列文件夹，在 Mac 上用 <span class="mono">agentctl instance add {flowType} &lt;文件夹&gt;</span> 建。
         </p>
       {:else}
-        <ul class="instances">
+        <ul class="list">
           {#each instances as instance (`${instance.machineId}/${instance.id}`)}
-            <li><InstanceCard {instance} {machines} onChanged={() => void afterCommand()} /></li>
+            <li><InstanceRow {instance} {machines} onChanged={() => void afterCommand()} /></li>
           {/each}
         </ul>
       {/if}
@@ -164,9 +167,9 @@
       {#if instances.length === 0 && !isCreating}
         <p class="empty">还没有仓库。点「新建」选一个仓库开始。</p>
       {:else if instances.length > 0}
-        <ul class="instances">
+        <ul class="list">
           {#each instances as instance (`${instance.machineId}/${instance.id}`)}
-            <li><InstanceCard {instance} {machines} onChanged={() => void afterCommand()} /></li>
+            <li><InstanceRow {instance} {machines} onChanged={() => void afterCommand()} /></li>
           {/each}
         </ul>
       {/if}
@@ -185,7 +188,7 @@
     {#if runs !== null && runs.length === 0}
       <p class="empty">还没有运行</p>
     {:else if runs !== null}
-      <RunItems {runs} />
+      <RunItems {runs} isCompact />
     {/if}
   {/if}
 </section>
@@ -210,15 +213,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-
-  .instances {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
   }
 
   .hint {

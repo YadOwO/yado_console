@@ -13,6 +13,7 @@
   import { errorMessage } from '../../lib/http';
   import {
     EXPLORE_FLOW,
+    flowBadge,
     IMPLEMENT_FLOW,
     instanceLabel,
     listRuns,
@@ -97,17 +98,6 @@
     void loadActive(machineId);
   }
 
-  /** 卡头的模式标记：review、代码清理复审通过就推到开发分支 */
-  function badgeOf(flow: IFlow): IFlowCard['badge'] {
-    if (flow.type === IMPLEMENT_FLOW) {
-      return { label: '推新分支', tone: 'resolved' };
-    }
-    if (flow.type === EXPLORE_FLOW) {
-      return { label: '只出想法', tone: 'info' };
-    }
-    return { label: '推送', tone: 'resolved' };
-  }
-
   /** 按机器报上来的流程类型（保持 agentd 的顺序）汇总各自的实例 */
   function buildCards(data: IOverview): IFlowCard[] {
     const flows = new Map<string, IFlow>();
@@ -130,7 +120,7 @@
           last = { instance, run: instance.lastRun };
         }
       }
-      return { flow, instances, nextRunAt: nextRuns[0] ?? null, last, badge: badgeOf(flow) };
+      return { flow, instances, nextRunAt: nextRuns[0] ?? null, last, badge: flowBadge(flow.type) };
     });
   }
 
