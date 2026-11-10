@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * 一台机器的全局设置：同时最多跑几个、各角色默认模型、运行材料保留天数。
+   * 一台机器的全局设置：同时最多跑几个、各角色默认模型、各模型的思考强度、运行材料保留天数。
    *
    * 只把改动过的字段发给 Mac。暂停整个流程在各流程页上做；检查命令、可推送的分支等安全相关的配置只能在 Mac 上改。
    */
@@ -17,6 +17,14 @@
   let maxConcurrentRuns = $state(initial.maxConcurrentRuns);
   let retentionDays = $state(initial.retentionDays);
   let models = $state<Record<Role, string>>({ ...initial.models });
+
+  /** 能选思考强度的模型；只在打开时取一次，和其他字段一样不被总览刷新冲掉 */
+  const thinkingModels = untrack(() => (machine.modelThinking ?? []).filter((model) => model.options.length > 0));
+
+  /** 每个模型选中的思考强度，初始是实际会用的 */
+  let thinking = $state<Record<string, string>>(
+    Object.fromEntries(thinkingModels.map((model) => [model.id, model.thinking ?? model.options[0] ?? ''])),
+  );
 
   /** 提交改动过的字段 */
   async function submit(event: SubmitEvent): Promise<void> {
@@ -36,6 +44,17 @@
     }
     if (Object.keys(modelPatch).length > 0) {
       patch.models = modelPatch;
+    }
+    // 选回默认的发 null，以后默认变了也跟着变
+    const thinkingPatch: Record<string, string | null> = {};
+    for (const model of thinkingModels) {
+      const value = thinking[model.id];
+      if (value !== undefined && value !== model.thinking) {
+        thinkingPatch[model.id] = value === model.defaultThinking ? null : value;
+      }
+    }
+    if (Object.keys(thinkingPatch).length > 0) {
+      patch.thinking = thinkingPatch;
     }
     if (Object.keys(patch).length === 0) {
       return;
@@ -64,6 +83,23 @@
       </select>
     </label>
   {/each}
+  {#if thinkingModels.length > 0}
+    <div class="field thinking">
+      <span>思考强度</span>
+      <div class="thinking-list">
+        {#each thinkingModels as model (model.id)}
+          <label class="thinking-row">
+            <span class="model-id">{model.id}</span>
+            <select bind:value={thinking[model.id]}>
+              {#each model.options as option (option)}
+                <option value={option}>{option === model.defaultThinking ? `${option}（默认）` : option}</option>
+              {/each}
+            </select>
+          </label>
+        {/each}
+      </div>
+    </div>
+  {/if}
   <label class="field">
     <span>材料保留</span>
     <span class="inline">
@@ -103,6 +139,30 @@
 
   .narrow {
     width: 80px;
+  }
+
+  .thinking {
+    align-items: start;
+  }
+
+  .thinking-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .thinking-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 130px;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .model-id {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
   }
 
   .actions {

@@ -204,8 +204,21 @@ export interface IInboxItem {
 export interface ISettings {
   maxConcurrentRuns: number;
   models: Record<Role, string>;
+  /** 各模型单独选的思考强度（模型 ID → 强度）；旧版 hub 不传 */
+  thinking?: Record<string, string>;
   retentionDays: number;
   pausedFlows: string[];
+}
+
+/** 一个模型的思考强度 */
+export interface IModelThinking {
+  id: string;
+  /** 可选的强度；为空表示这个模型不能选 */
+  options: string[];
+  /** 没单独选时用的：Claude 的模型 high，DeepSeek max，其他用 Paseo 的默认 */
+  defaultThinking: string | null;
+  /** 实际会用的 */
+  thinking: string | null;
 }
 
 /** 流程类型 */
@@ -348,6 +361,8 @@ export interface IMachine {
   settings: ISettings | null;
   /** 可选的模型 */
   models: string[];
+  /** 每个模型的思考强度；旧版 hub 不传 */
+  modelThinking?: IModelThinking[];
   flows: IFlow[];
 }
 
@@ -409,6 +424,8 @@ export type CommandInput =
       payload: Partial<{
         maxConcurrentRuns: number;
         models: Partial<Record<Role, string>>;
+        /** 只写要改的模型；null 表示改回默认 */
+        thinking: Record<string, string | null>;
         retentionDays: number;
         pausedFlows: string[];
       }>;
