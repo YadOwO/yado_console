@@ -4,8 +4,9 @@
    *
    * 问题可以选「不修」（加进不修清单，以后同样的问题不再提）、「已处理」（你自己改了或决定不管），
    * 或「交给主审」：Mac 上另开一次运行，主审看最新代码在修和不修里选一个，可以先补充一段信息给它。
-   * 一次实现做完的新功能（运行状态为成功）：选「不合」（feat 分支留着）、「合」（Mac 上合进开发分支）、「交给主审」（主审判合不合），
-   * 或「按备注修改」：备注必填，主审照备注定改法、实现者改，都通过就推回同一个 feat 分支，再回到待办。
+   * 一次实现做完的新功能（运行状态为成功）：选「不合」（feat 分支留着）、「按备注修改」（备注必填，主审照备注定改法、实现者改，
+   * 都通过就推回同一个 feat 分支，再回到待办）、「派人过一遍」（备注可选，Mac 上另开一次运行，验证者按重点关注一条条验、
+   * 主审复核，结果回到这条待办，不改代码不推）或「合」（Mac 上合进开发分支）。这里不再显示「交给主审」（Mac 仍然接受）。
    * 停下来的一次实现（Mac 判断能交给主审的，canDelegate）：「知道了」或「交给主审」，主审看停下的原因定处理办法，
    * 实现者照着改，都通过就推 feat 分支、作为新功能回到待办。其他运行只能「知道了」。
    * 等你点头的运行（发布计划待确认、发布要你确认、新功能改了项目规则要你确认）：看全文，同意或拒绝，可以写备注；页面不能改计划和命令。
@@ -42,11 +43,11 @@
     items: IInboxItem[];
   }
 
-  /** 要先写备注的处理：交给主审、按备注修改、同意、拒绝 */
-  type PanelMode = 'delegate' | 'revise' | 'approve' | 'reject';
+  /** 要先写备注的处理：交给主审、按备注修改、派人过一遍、同意、拒绝 */
+  type PanelMode = 'delegate' | 'revise' | 'verify' | 'approve' | 'reject';
 
   /** 能对一条待办做的处理 */
-  type Action = 'wontfix' | 'done' | 'delegate' | 'revise' | 'approve' | 'reject';
+  type Action = 'wontfix' | 'done' | 'delegate' | 'revise' | 'verify' | 'approve' | 'reject';
 
   /** 按实例分组，组和组内都保持 hub 给的先后 */
   const groups = $derived.by(() => {
@@ -83,18 +84,18 @@
     '主审看停下的原因和现在的代码，定怎么接着做完，实现者照着改；都通过就推到 feat 分支，作为新功能回到待办。' +
     '主审处理不了会说明要你做什么，再回到待办。';
 
-  /** 新功能「交给主审」的说明 */
-  const MERGE_DELEGATE_HINT =
-    '主审看需求、重点关注和改动，只判合不合，不做代码 review。判合就合进开发分支；判不合会带着理由回到待办，你再选。';
-
   /** 新功能「按备注修改」的说明 */
   const REVISE_HINT =
     '主审照你的备注定改法，实现者在这个 feat 分支上接着改；检查和主审核对都通过就推回同一个 feat 分支，再回到待办让你选合不合。' +
     '没改成会停下来回到待办。';
 
+  /** 新功能「派人过一遍」的说明 */
+  const VERIFY_HINT =
+    '派一个 agent 按重点关注一条条验（跑测试、看代码），主审复核后结果回到这条待办，你再选合不合。不会改代码、不会推。';
+
   /**
    * 是不是一次实现做完的新功能：待办里只有它是成功状态的运行。
-   * 这类待办选「合」或「交给主审」都会在 Mac 上另开一次运行。
+   * 这类待办选「合」或「派人过一遍」都会在 Mac 上另开一次运行。
    */
   function isDoneFeature(item: IInboxItem): boolean {
     return item.kind === 'run' && item.runStatus === 'succeeded';
@@ -105,11 +106,8 @@
     return item.kind === 'run' && item.runStatus === 'needs_attention' && item.canDelegate === true;
   }
 
-  /** 「交给主审」的说明：问题、新功能、停下来的一次实现各不一样 */
+  /** 「交给主审」的说明：问题、停下来的一次实现各不一样（新功能不再显示交给主审） */
   function delegateHint(item: IInboxItem): string {
-    if (isDoneFeature(item)) {
-      return MERGE_DELEGATE_HINT;
-    }
     return isRescuable(item) ? RESCUE_DELEGATE_HINT : DELEGATE_HINT;
   }
 
@@ -118,10 +116,10 @@
     if (mode === 'revise') {
       return '要怎么改（必填）：比如注销后旧 token 不能再写入、Logto 账号一起删';
     }
+    if (mode === 'verify') {
+      return '要重点过什么（可选）：比如重点看 A2、A5，再看看空表时导出';
+    }
     if (mode === 'delegate') {
-      if (isDoneFeature(item)) {
-        return '补充信息（可选）：比如你最担心哪里';
-      }
       return isRescuable(item) ? '补充信息（可选）：比如那段内容写到哪里' : '补充信息（可选）：比如回答上面主审的问题';
     }
     if (isDoneFeature(item)) {
@@ -192,6 +190,9 @@
     if (mode === 'revise') {
       return REVISE_HINT;
     }
+    if (mode === 'verify') {
+      return VERIFY_HINT;
+    }
     return mode === 'delegate' ? delegateHint(item) : decideHint(item, mode);
   }
 
@@ -202,6 +203,9 @@
     }
     if (mode === 'revise') {
       return '按备注修改';
+    }
+    if (mode === 'verify') {
+      return '派人过一遍';
     }
     return isDoneFeature(item) ? '确定合' : mode === 'approve' ? '确定同意' : '确定拒绝';
   }
@@ -214,11 +218,22 @@
     if (mode === 'revise') {
       return '按备注修改';
     }
+    if (mode === 'verify') {
+      return '派人过一遍';
+    }
     return isDoneFeature(item) ? '合进开发分支' : mode === 'approve' ? '同意' : '拒绝';
   }
 
+  /** 备注框的标题：交给主审、按备注修改是给主审的，派人过一遍是给验证者和主审的，同意或拒绝是备注 */
+  function noteLabel(mode: PanelMode): string {
+    if (mode === 'delegate' || mode === 'revise') {
+      return '补充给主审的信息';
+    }
+    return mode === 'verify' ? '补充给验证者的信息' : '同意或拒绝的备注';
+  }
+
   /**
-   * 备注面板上点了确定：交给主审（Mac 上另开一次运行），按备注修改（同一次实现重新排队），
+   * 备注面板上点了确定：交给主审、派人过一遍（Mac 上另开一次运行），按备注修改（同一次实现重新排队），
    * 同意或拒绝（Mac 上接着跑或取消；新功能的同意就是「合」）。按备注修改没写备注时不发。
    */
   function confirmPanel(item: IInboxItem, mode: PanelMode): void {
@@ -297,9 +312,9 @@
                 bind:note
                 hint={panelHint(item, mode)}
                 placeholder={notePlaceholder(item, mode)}
-                label={mode === 'delegate' || mode === 'revise' ? '补充给主审的信息' : '同意或拒绝的备注'}
-                maxlength={mode === 'delegate' || mode === 'revise' ? DELEGATE_NOTE_MAX : APPROVAL_NOTE_MAX}
-                rows={mode === 'delegate' || mode === 'revise' ? 3 : 2}
+                label={noteLabel(mode)}
+                maxlength={mode === 'delegate' || mode === 'revise' || mode === 'verify' ? DELEGATE_NOTE_MAX : APPROVAL_NOTE_MAX}
+                rows={mode === 'delegate' || mode === 'revise' || mode === 'verify' ? 3 : 2}
                 confirmLabel={confirmLabel(item, mode)}
                 isConfirmDisabled={mode === 'revise' && note.trim() === ''}
                 isPrimary={mode !== 'reject'}
@@ -326,14 +341,17 @@
                   <button class="btn btn-primary" type="button" onclick={() => openPanel(item, 'approve')}>同意</button>
                 {:else if isDoneFeature(item)}
                   <button class="btn" type="button" title="不进开发分支，feat 分支留着" onclick={() => resolve(item, 'done')}>不合</button>
-                  <button class="btn" type="button" title="让主审（Opus）看需求和改动，判合不合" onclick={() => openPanel(item, 'delegate')}
-                    >交给主审</button
-                  >
                   <button
                     class="btn"
                     type="button"
                     title="主审照你的备注定改法，实现者改完推回同一个 feat 分支，再回到待办"
                     onclick={() => openPanel(item, 'revise')}>按备注修改</button
+                  >
+                  <button
+                    class="btn"
+                    type="button"
+                    title="派一个 agent 按重点关注一条条验，主审复核后结果回到这条待办；不改代码、不推"
+                    onclick={() => openPanel(item, 'verify')}>派人过一遍</button
                   >
                   <button class="btn btn-primary" type="button" onclick={() => openPanel(item, 'approve')}>合</button>
                 {:else if isRescuable(item)}
