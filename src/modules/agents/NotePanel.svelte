@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * 处理前写备注的小面板：一句说明、备注框、取消与确定。
-   * 待办的「交给主审」「同意 / 拒绝」和想法的「采纳并开工 / 丢弃 / 已实现」共用。
+   * 待办的「交给主审」「按备注修改」「同意 / 拒绝」和想法的「采纳并开工 / 丢弃 / 已实现」共用。
    */
   let {
     note = $bindable(),
@@ -13,6 +13,7 @@
     rows = 2,
     confirmLabel,
     isPrimary = true,
+    isConfirmDisabled = false,
     onCancel,
     onConfirm,
   }: {
@@ -32,6 +33,8 @@
     confirmLabel: string;
     /** 确定是不是实心的主按钮；拒绝、丢弃这类不是 */
     isPrimary?: boolean;
+    /** 确定按钮是否不可点：备注必填却没写时 */
+    isConfirmDisabled?: boolean;
     onCancel: () => void;
     onConfirm: () => void;
   } = $props();
@@ -43,7 +46,7 @@
   {#if tip !== null}<p class="muted hint">{tip}</p>{/if}
   <div class="btn-row">
     <button class="btn" type="button" onclick={onCancel}>取消</button>
-    <button class="btn" class:btn-primary={isPrimary} type="button" onclick={onConfirm}>{confirmLabel}</button>
+    <button class="btn" class:btn-primary={isPrimary} type="button" disabled={isConfirmDisabled} onclick={onConfirm}>{confirmLabel}</button>
   </div>
 </div>
 

@@ -437,7 +437,7 @@ export type CommandInput =
         pausedFlows: string[];
       }>;
     }
-  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate' | 'approve' | 'reject'; note?: string } }
+  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate' | 'revise' | 'approve' | 'reject'; note?: string } }
   | { type: 'sync.now'; payload: Record<string, never> }
   // 经验只能作废、恢复；改文字和新增只能在 Mac 上用 agentctl
   | { type: 'lesson.void'; payload: { id: number } }
