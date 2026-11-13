@@ -19,6 +19,7 @@
    */
   import { onMount } from 'svelte';
 
+  import { COPY_FEEDBACK_MS, copyText } from '../../lib/clipboard';
   import { formatFullTime, formatTime } from '../../lib/format';
   import {
     APPROVAL_NOTE_MAX,
@@ -246,25 +247,22 @@
     void send(item, mode, sendLabel(item, mode), text);
   }
 
-  /** 复制分支命令后按钮上短暂显示结果多久（毫秒） */
-  const COPY_FEEDBACK_MS = 1500;
-
   /** 刚复制过分支命令的待办（按 inboxKey）：复制成功还是失败；过一会儿清掉，按钮恢复显示分支名 */
   let copyResults = $state<Record<string, 'ok' | 'fail'>>({});
 
   /** 各待办恢复按钮文字的定时器：连点时先清掉上一个，免得提前恢复 */
   const copyTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  /** 粘进 shell 用的分支名：只含常见安全字符时原样返回，否则用单引号包起来，里面的单引号转成 '\'' */
+  function shellQuote(value: string): string {
+    return /^[A-Za-z0-9._/-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+  }
+
   /** 点分支：复制切到这个 feat 分支的命令，按钮上短暂显示「已复制」或「复制失败」 */
   async function copyBranch(item: IInboxItem, branch: string): Promise<void> {
     const key = inboxKey(item);
-    try {
-      await navigator.clipboard.writeText(`git fetch origin && git checkout ${branch}`);
-      copyResults[key] = 'ok';
-    } catch {
-      // 浏览器不允许写剪贴板（非 https、没授权）：告诉你没复制上，分支名仍可手动抄
-      copyResults[key] = 'fail';
-    }
+    // 复制失败（浏览器不允许写剪贴板）时告诉你没复制上，分支名仍可手动抄
+    copyResults[key] = (await copyText(`git fetch origin && git checkout ${shellQuote(branch)}`)) ? 'ok' : 'fail';
     clearTimeout(copyTimers.get(key));
     copyTimers.set(
       key,

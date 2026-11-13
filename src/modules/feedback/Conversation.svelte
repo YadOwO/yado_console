@@ -8,6 +8,7 @@
 
   import { refreshBadges } from '../../lib/admin-status.svelte';
   import { productName } from '../../lib/config';
+  import { COPY_FEEDBACK_MS, copyText } from '../../lib/clipboard';
   import { formatFullTime, formatTime } from '../../lib/format';
   import { ApiError, errorMessage } from '../../lib/http';
   import { pollWhileVisible } from '../../lib/poll';
@@ -280,12 +281,10 @@
     if (conversation === null) {
       return;
     }
-    try {
-      await navigator.clipboard.writeText(conversation.userId);
+    // 浏览器不允许写剪贴板时不提示，用户 ID 仍可手动选中复制
+    if (await copyText(conversation.userId)) {
       isCopied = true;
-      setTimeout(() => (isCopied = false), 1500);
-    } catch {
-      // 浏览器不允许写剪贴板时，用户 ID 仍可手动选中复制
+      setTimeout(() => (isCopied = false), COPY_FEEDBACK_MS);
     }
   }
 

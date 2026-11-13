@@ -86,6 +86,7 @@ Mac 上的 agentd（[yado_agents](../../yado_agents)）跑四种自动流程：�
 | 运行列表 | `agents/RunItems.svelte` | 总览、流程页、运行记录里的运行列表；`isCompact` 一条一行（流程页用） |
 | 总览数据 | `agents/overview-store.svelte.ts` | 各页面共用的一份总览，带实例名、流程名的对照表 |
 | 定时刷新 | `lib/poll.ts` | 页面可见时定时做一件事，切回页面时补一次 |
+| 复制到剪贴板 | `lib/clipboard.ts` 的 `copyText`、`COPY_FEEDBACK_MS` | 写剪贴板（不允许时返回 false，不抛错），以及复制后按钮上显示结果的时长 |
 | 刷新角标 | `lib/admin-status.svelte.ts` 的 `refreshBadges` | 数据变了之后顺手刷新侧栏的数字 |
 
 全局的类名会漏进所有页面：页面里自己起的类名不要和 `app.css` 里的重名，除非就是要在它上面加几条。
