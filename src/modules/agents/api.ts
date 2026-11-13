@@ -203,6 +203,10 @@ export interface IInboxItem {
    * 旧版 hub 不传，按 false 处理
    */
   canDelegate?: boolean;
+  /** 做完的新功能改到并推上去的仓库名；别的待办为空数组。旧版 hub 不传，按空处理 */
+  repos?: string[];
+  /** 做完的新功能推上去的 feat 分支；别的待办为 null。旧版 hub 不传，按 null 处理 */
+  branch?: string | null;
   createdAt: string;
 }
 

@@ -10,6 +10,8 @@
    * 停下来的一次实现（Mac 判断能交给主审的，canDelegate）：「知道了」或「交给主审」，主审看停下的原因定处理办法，
    * 实现者照着改，都通过就推 feat 分支、作为新功能回到待办。其他运行只能「知道了」。
    * 等你点头的运行（发布计划待确认、发布要你确认、新功能改了项目规则要你确认）：看全文，同意或拒绝，可以写备注；页面不能改计划和命令。
+   * 新功能卡片第一行在状态后面列出改到的仓库（每个一个标签）和推上去的 feat 分支；点分支复制切过去的命令
+   * （git fetch origin && git checkout <分支>），在各仓库目录里粘贴执行。旧版 hub 不传仓库和分支时不显示。
    *
    * 待办按实例（仓库或系列文件夹）分组，组标题写仓库名和流程。页面打开期间每 10 秒自己刷新一次。
    * 处理都是发指令给 Mac：点了就先从列表里拿掉，指令在后台发，可以接着处理下一条，不用等 Mac 回话；
@@ -244,7 +246,51 @@
     void send(item, mode, sendLabel(item, mode), text);
   }
 
-  onMount(() => watchOverview());
+  /** 复制分支命令后按钮上短暂显示结果多久（毫秒） */
+  const COPY_FEEDBACK_MS = 1500;
+
+  /** 刚复制过分支命令的待办（按 inboxKey）：复制成功还是失败；过一会儿清掉，按钮恢复显示分支名 */
+  let copyResults = $state<Record<string, 'ok' | 'fail'>>({});
+
+  /** 各待办恢复按钮文字的定时器：连点时先清掉上一个，免得提前恢复 */
+  const copyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** 点分支：复制切到这个 feat 分支的命令，按钮上短暂显示「已复制」或「复制失败」 */
+  async function copyBranch(item: IInboxItem, branch: string): Promise<void> {
+    const key = inboxKey(item);
+    try {
+      await navigator.clipboard.writeText(`git fetch origin && git checkout ${branch}`);
+      copyResults[key] = 'ok';
+    } catch {
+      // 浏览器不允许写剪贴板（非 https、没授权）：告诉你没复制上，分支名仍可手动抄
+      copyResults[key] = 'fail';
+    }
+    clearTimeout(copyTimers.get(key));
+    copyTimers.set(
+      key,
+      setTimeout(() => {
+        delete copyResults[key];
+        copyTimers.delete(key);
+      }, COPY_FEEDBACK_MS),
+    );
+  }
+
+  /** 分支按钮上的字：平时是分支名，刚复制过显示结果 */
+  function branchLabel(item: IInboxItem, branch: string): string {
+    const result = copyResults[inboxKey(item)];
+    if (result === 'ok') {
+      return '已复制';
+    }
+    return result === 'fail' ? '复制失败' : `⎇ ${branch}`;
+  }
+
+  onMount(() => {
+    const stopWatching = watchOverview();
+    return () => {
+      stopWatching();
+      copyTimers.forEach((timer) => clearTimeout(timer));
+    };
+  });
 </script>
 
 <AgentPage active="inbox" sub="主审交给你的问题、等你点头的发布，和需要你看一下的运行">
@@ -290,6 +336,15 @@
                 <span class="status status-pending">新功能</span>
               {:else if item.runStatus !== null}
                 <span class={runStatusClass(item.runStatus)}>运行{runStatusLabel(item.runStatus)}</span>
+              {/if}
+              {#each item.repos ?? [] as repo (repo)}
+                <span class="repo-tag">{repo}</span>
+              {/each}
+              {#if item.branch}
+                {@const branch = item.branch}
+                <button class="branch" type="button" title="复制切换到这个分支的命令" onclick={() => void copyBranch(item, branch)}
+                  >{branchLabel(item, branch)}</button
+                >
               {/if}
               <a class="muted link" href="/agents/runs/{item.machineId}/{item.runId}">看这次运行</a>
               <time class="muted time" datetime={item.createdAt} title={formatFullTime(item.createdAt)}>{formatTime(item.createdAt)}</time>
@@ -402,6 +457,46 @@
     padding: 14px 16px 12px 20px;
   }
 
+  /* 新功能改到的仓库：主题色描边的等宽标签，比正文显眼；圆角和 .tag 一致 */
+  .repo-tag {
+    display: inline-block;
+    padding: 0 6px;
+    border: 1px solid var(--info);
+    border-radius: 5px;
+    color: var(--info);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    white-space: nowrap;
+  }
+
+  /* 推上去的 feat 分支：点了复制切过去的命令；分支名很长时在窄屏上可以断开，不撑破卡片 */
+  .branch {
+    min-width: 0;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-align: left;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  .branch:hover {
+    color: var(--fg);
+  }
+
+  /* 第一行换行时「看这次运行」和时间不被挤成竖排；时间仍靠右 */
+  .link,
+  .time {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
   .time {
     margin-left: auto;
     font-size: 12px;
@@ -424,7 +519,7 @@
 
   .detail {
     padding: 8px 10px;
-    /* 一次实现完成后的说明有好几行（分支、重点关注） */
+    /* 一次实现完成后的说明有好几行（派 agent 过一遍的结果、重点关注） */
     white-space: pre-line;
     border-radius: 8px;
     background: var(--surface-sunken);
