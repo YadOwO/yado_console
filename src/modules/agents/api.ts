@@ -561,22 +561,22 @@ export function isRunActive(status: string): boolean {
   return status === 'queued' || status === 'running';
 }
 
+/**
+ * 主审判断的展示信息，顺序就是运行详情里分组的先后：交给你的排在最前；「以后再做」只有代码清理会判，「重点关注」只有一次实现有。
+ * groupTitle 是运行详情的分组标题，label 是问题行内的标签，tone 是分组色调；verdict 为 null 表示还没判。
+ */
+export const VERDICTS: readonly { verdict: string | null; groupTitle: string; label: string; tone: string }[] = [
+  { verdict: 'attention', groupTitle: '重点关注', label: '重点看', tone: 'pending' },
+  { verdict: 'escalate', groupTitle: '交给你', label: '交给你', tone: 'pending' },
+  { verdict: 'fix', groupTitle: '修', label: '修', tone: 'resolved' },
+  { verdict: 'defer', groupTitle: '以后再做', label: '以后再做', tone: 'info' },
+  { verdict: 'wontfix', groupTitle: '不修', label: '不修', tone: 'muted' },
+  { verdict: null, groupTitle: '还没判', label: '未判', tone: 'muted' },
+];
+
 /** 主审判断的中文 */
 export function verdictLabel(verdict: string | null): string {
-  switch (verdict) {
-    case 'fix':
-      return '修';
-    case 'wontfix':
-      return '不修';
-    case 'escalate':
-      return '交给你';
-    case 'defer':
-      return '以后再做';
-    case 'attention':
-      return '重点看';
-    default:
-      return '未判';
-  }
+  return VERDICTS.find((item) => item.verdict === verdict)?.label ?? '未判';
 }
 
 /** 经验来源的中文 */
