@@ -30,6 +30,7 @@
     runStatusLabel,
     severityLabel,
     type IInboxItem,
+    type InboxAction,
   } from './api';
   import AgentPage from './AgentPage.svelte';
   import { submitCommand } from './command.svelte';
@@ -47,10 +48,10 @@
   }
 
   /** 要先写备注的处理：交给主审、按备注修改、派 agent 过一遍、同意、拒绝 */
-  type PanelMode = 'delegate' | 'revise' | 'verify' | 'approve' | 'reject';
+  type PanelMode = Exclude<InboxAction, 'wontfix' | 'done'>;
 
-  /** 能对一条待办做的处理 */
-  type Action = 'wontfix' | 'done' | 'delegate' | 'revise' | 'verify' | 'approve' | 'reject';
+  /** 给主审或验证者写补充信息的处理：备注框更大，上限是 DELEGATE_NOTE_MAX */
+  type AgentMode = Exclude<PanelMode, 'approve' | 'reject'>;
 
   /** 按实例分组，组和组内都保持 hub 给的先后 */
   const groups = $derived.by(() => {
@@ -162,9 +163,9 @@
    * 处理一条待办：先从列表里拿掉，指令在后台发。
    * Mac 是先同步状态、再回报结果，所以成功后刷新一次总览，hub 上那条就没了；没成功就放回列表并写明原因。
    */
-  async function send(item: IInboxItem, action: Action, label: string, noteText = ''): Promise<void> {
+  async function send(item: IInboxItem, action: InboxAction, label: string, noteText = ''): Promise<void> {
     const key = inboxKey(item);
-    const payload: { itemId: string; action: Action; note?: string } = { itemId: item.id, action };
+    const payload: { itemId: string; action: InboxAction; note?: string } = { itemId: item.id, action };
     if (noteText !== '') {
       payload.note = noteText;
     }
@@ -199,40 +200,37 @@
     return mode === 'delegate' ? delegateHint(item) : decideHint(item, mode);
   }
 
+  /** 给 agent 的处理：按钮上的字（确定和发指令时一样）、备注框的标题 */
+  const AGENT_MODES: Record<AgentMode, { label: string; noteLabel: string }> = {
+    delegate: { label: '交给主审', noteLabel: '补充给主审的信息' },
+    revise: { label: '按备注修改', noteLabel: '补充给主审的信息' },
+    verify: { label: '派 agent 过一遍', noteLabel: '补充给验证者的信息' },
+  };
+
+  /** 是不是给 agent 的处理（不是同意或拒绝） */
+  function isAgentMode(mode: PanelMode): mode is AgentMode {
+    return mode === 'delegate' || mode === 'revise' || mode === 'verify';
+  }
+
   /** 备注面板确定按钮上的字 */
   function confirmLabel(item: IInboxItem, mode: PanelMode): string {
-    if (mode === 'delegate') {
-      return '交给主审';
-    }
-    if (mode === 'revise') {
-      return '按备注修改';
-    }
-    if (mode === 'verify') {
-      return '派 agent 过一遍';
+    if (isAgentMode(mode)) {
+      return AGENT_MODES[mode].label;
     }
     return isDoneFeature(item) ? '确定合' : mode === 'approve' ? '确定同意' : '确定拒绝';
   }
 
   /** 备注面板确定按钮上的字（发指令时的提示） */
   function sendLabel(item: IInboxItem, mode: PanelMode): string {
-    if (mode === 'delegate') {
-      return '交给主审';
-    }
-    if (mode === 'revise') {
-      return '按备注修改';
-    }
-    if (mode === 'verify') {
-      return '派 agent 过一遍';
+    if (isAgentMode(mode)) {
+      return AGENT_MODES[mode].label;
     }
     return isDoneFeature(item) ? '合进开发分支' : mode === 'approve' ? '同意' : '拒绝';
   }
 
   /** 备注框的标题：交给主审、按备注修改是给主审的，派 agent 过一遍是给验证者和主审的，同意或拒绝是备注 */
   function noteLabel(mode: PanelMode): string {
-    if (mode === 'delegate' || mode === 'revise') {
-      return '补充给主审的信息';
-    }
-    return mode === 'verify' ? '补充给验证者的信息' : '同意或拒绝的备注';
+    return isAgentMode(mode) ? AGENT_MODES[mode].noteLabel : '同意或拒绝的备注';
   }
 
   /**
@@ -366,8 +364,8 @@
                 hint={panelHint(item, mode)}
                 placeholder={notePlaceholder(item, mode)}
                 label={noteLabel(mode)}
-                maxlength={mode === 'delegate' || mode === 'revise' || mode === 'verify' ? DELEGATE_NOTE_MAX : APPROVAL_NOTE_MAX}
-                rows={mode === 'delegate' || mode === 'revise' || mode === 'verify' ? 3 : 2}
+                maxlength={isAgentMode(mode) ? DELEGATE_NOTE_MAX : APPROVAL_NOTE_MAX}
+                rows={isAgentMode(mode) ? 3 : 2}
                 confirmLabel={confirmLabel(item, mode)}
                 isConfirmDisabled={mode === 'revise' && note.trim() === ''}
                 isPrimary={mode !== 'reject'}

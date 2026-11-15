@@ -455,6 +455,9 @@ export type CommandInput =
 /** 修改实例的参数 */
 export type UpdateInstancePayload = Extract<CommandInput, { type: 'instance.update' }>['payload'];
 
+/** 能对一条待办做的处理，与 hub 的白名单一致 */
+export type InboxAction = Extract<CommandInput, { type: 'inbox.resolve' }>['payload']['action'];
+
 /** 修改全局设置的参数 */
 export type SettingsPayload = Extract<CommandInput, { type: 'settings.update' }>['payload'];
 
@@ -604,7 +607,6 @@ export function severityLabel(severity: string | null): string {
   }
 }
 
-/** 提交号取前 7 位 */
 /** 交给主审时补充信息的最大长度，与 hub、agentd 一致 */
 export const DELEGATE_NOTE_MAX = 1000;
 
