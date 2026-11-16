@@ -77,6 +77,20 @@
     return [...result.values()];
   });
 
+  /** 说明超过这么多行就默认收起，只露出前几行 */
+  const DETAIL_FOLD_LINES = 6;
+
+  /** 说明超过这么多字（长行在页面上会折成好几行）也默认收起 */
+  const DETAIL_FOLD_CHARS = 400;
+
+  /** 展开了说明全文的待办（按 inboxKey） */
+  let expandedDetails = $state<Record<string, boolean>>({});
+
+  /** 说明是不是长到要收起：行数或字数超过上限 */
+  function isLongDetail(detail: string): boolean {
+    return detail.split('\n').length > DETAIL_FOLD_LINES || detail.length > DETAIL_FOLD_CHARS;
+  }
+
   /** 没处理成功的待办（按 inboxKey）：原因，和当时写的备注（重新打开时填回去） */
   let failures = $state<Record<string, { text: string; note: string }>>({});
 
@@ -354,7 +368,16 @@
             </div>
             <p class="title">{item.title}</p>
             {#if item.location !== null}<p class="mono muted location">{item.location}</p>{/if}
-            {#if item.detail !== null}<p class="detail">{item.detail}</p>{/if}
+            {#if item.detail !== null}
+              {@const isFoldable = isLongDetail(item.detail)}
+              {@const isFolded = isFoldable && expandedDetails[key] !== true}
+              <p class="detail" class:folded={isFolded}>{item.detail}</p>
+              {#if isFoldable}
+                <button class="detail-toggle muted link" type="button" onclick={() => (expandedDetails[key] = isFolded)}
+                  >{isFolded ? '展开全文' : '收起'}</button
+                >
+              {/if}
+            {/if}
             {#if item.approvalText !== null}
               <details class="approval" open>
                 <summary>{item.approvalKind === 'plan' ? '发布计划全文' : '要你确认的事'}</summary>
@@ -536,6 +559,24 @@
     background: var(--surface-sunken);
     color: var(--muted);
     overflow-wrap: anywhere;
+  }
+
+  /* 长说明收起时只露出前 6 行，和 DETAIL_FOLD_LINES 一致 */
+  .detail.folded {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+  }
+
+  .detail-toggle {
+    width: fit-content;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 13px;
+    cursor: pointer;
   }
 
   .approval summary {
