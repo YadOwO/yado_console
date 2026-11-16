@@ -203,6 +203,11 @@ export interface IInboxItem {
    * 旧版 hub 不传，按 false 处理
    */
   canDelegate?: boolean;
+  /**
+   * 能不能接着跑：失败或被中断、代码还在的一次实现由 Mac 判断；同一次运行重新排队，做完的步骤跳过。
+   * 旧版 hub 不传，按 false 处理
+   */
+  canRetry?: boolean;
   /** 做完的新功能改到并推上去的仓库名；别的待办为空数组。旧版 hub 不传，按空处理 */
   repos?: string[];
   /** 做完的新功能推上去的 feat 分支；别的待办为 null。旧版 hub 不传，按 null 处理 */
@@ -441,7 +446,7 @@ export type CommandInput =
         pausedFlows: string[];
       }>;
     }
-  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate' | 'revise' | 'verify' | 'approve' | 'reject'; note?: string } }
+  | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate' | 'revise' | 'verify' | 'approve' | 'reject' | 'retry'; note?: string } }
   | { type: 'sync.now'; payload: Record<string, never> }
   // 经验只能作废、恢复；改文字和新增只能在 Mac 上用 agentctl
   | { type: 'lesson.void'; payload: { id: number } }

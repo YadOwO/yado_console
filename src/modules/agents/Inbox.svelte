@@ -8,7 +8,9 @@
    * 都通过就推回同一个 feat 分支，再回到待办）、「派 agent 过一遍」（备注可选，Mac 上另开一次运行，验证者按重点关注一条条验、
    * 主审复核，结果回到这条待办，不改代码不推）或「合」（Mac 上合进开发分支）。这里不再显示「交给主审」（Mac 仍然接受）。
    * 停下来的一次实现（Mac 判断能交给主审的，canDelegate）：「知道了」或「交给主审」，主审看停下的原因定处理办法，
-   * 实现者照着改，都通过就推 feat 分支、作为新功能回到待办。其他运行只能「知道了」。
+   * 实现者照着改，都通过就推 feat 分支、作为新功能回到待办。
+   * 失败或被中断的一次实现（Mac 判断能接着跑的，canRetry）：「知道了」或「接着跑」，同一次运行重新排队，
+   * 做完的步骤跳过，从没做完的那一步重新开始；不用写备注，点了就发。其他运行只能「知道了」。
    * 等你点头的运行（发布计划待确认、发布要你确认、新功能改了项目规则要你确认）：看全文，同意或拒绝，可以写备注；页面不能改计划和命令。
    * 新功能卡片第一行在状态后面列出改到的仓库（每个一个标签）和推上去的 feat 分支；点分支复制切过去的命令
    * （git fetch origin && git checkout <分支>），在各仓库目录里粘贴执行。旧版 hub 不传仓库和分支时不显示。
@@ -48,7 +50,7 @@
   }
 
   /** 要先写备注的处理：交给主审、按备注修改、派 agent 过一遍、同意、拒绝 */
-  type PanelMode = Exclude<InboxAction, 'wontfix' | 'done'>;
+  type PanelMode = Exclude<InboxAction, 'wontfix' | 'done' | 'retry'>;
 
   /** 给主审或验证者写补充信息的处理：备注框更大，上限是 DELEGATE_NOTE_MAX */
   type AgentMode = Exclude<PanelMode, 'approve' | 'reject'>;
@@ -108,6 +110,11 @@
   /** 是不是停下来、能交给主审接着做的一次实现：由 Mac 判断 */
   function isRescuable(item: IInboxItem): boolean {
     return item.kind === 'run' && item.runStatus === 'needs_attention' && item.canDelegate === true;
+  }
+
+  /** 是不是失败或被中断、能接着跑的一次实现：由 Mac 判断 */
+  function isRetryable(item: IInboxItem): boolean {
+    return item.kind === 'run' && (item.runStatus === 'failed' || item.runStatus === 'interrupted') && item.canRetry === true;
   }
 
   /** 「交给主审」的说明：问题、停下来的一次实现各不一样（新功能不再显示交给主审） */
@@ -183,9 +190,9 @@
     showInboxItem(key);
   }
 
-  /** 不修、已处理、知道了；新功能的 done 就是「不合」 */
-  function resolve(item: IInboxItem, action: 'wontfix' | 'done'): void {
-    const label = action === 'wontfix' ? '标记不修' : isDoneFeature(item) ? '不合' : '标记已处理';
+  /** 不修、已处理、知道了、接着跑；新功能的 done 就是「不合」 */
+  function resolve(item: IInboxItem, action: 'wontfix' | 'done' | 'retry'): void {
+    const label = action === 'retry' ? '接着跑' : action === 'wontfix' ? '标记不修' : isDoneFeature(item) ? '不合' : '标记已处理';
     void send(item, action, label);
   }
 
@@ -412,6 +419,14 @@
                     type="button"
                     title="让主审（Opus）看停下的原因，定处理办法，实现者照着改完接着推"
                     onclick={() => openPanel(item, 'delegate')}>交给主审</button
+                  >
+                {:else if isRetryable(item)}
+                  <button class="btn" type="button" onclick={() => resolve(item, 'done')}>知道了</button>
+                  <button
+                    class="btn btn-primary"
+                    type="button"
+                    title="同一次运行重新排队：做完的步骤跳过，从没做完的那一步重新开始"
+                    onclick={() => resolve(item, 'retry')}>接着跑</button
                   >
                 {:else}
                   <button class="btn" type="button" onclick={() => resolve(item, 'done')}>知道了</button>
