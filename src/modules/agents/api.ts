@@ -223,6 +223,8 @@ export interface ISettings {
   thinking?: Record<string, string>;
   retentionDays: number;
   pausedFlows: string[];
+  /** 全局暂停：不开新运行，定时到点跳过，正在跑的放回队列；旧版 hub、agentd 不传，按没暂停算 */
+  isPaused?: boolean;
 }
 
 /** 一个模型的思考强度 */
@@ -444,6 +446,8 @@ export type CommandInput =
         thinking: Record<string, string | null>;
         retentionDays: number;
         pausedFlows: string[];
+        /** 一键暂停 / 恢复 */
+        isPaused: boolean;
       }>;
     }
   | { type: 'inbox.resolve'; payload: { itemId: string; action: 'wontfix' | 'done' | 'delegate' | 'revise' | 'verify' | 'approve' | 'reject' | 'retry'; note?: string } }

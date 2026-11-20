@@ -148,6 +148,20 @@
     return `${machine.isOnline ? '在线' : '离线'} · 数据更新于 ${formatTime(machine.lastSeenAt)}`;
   }
 
+  /** 这台机器是不是全局暂停着；旧版 agentd 不传，按没暂停算 */
+  function isMachinePaused(machine: IMachine): boolean {
+    return machine.settings?.isPaused === true;
+  }
+
+  /** 一键暂停或恢复这台机器：暂停时正在跑的放回队列，恢复后接着跑 */
+  async function togglePaused(machine: IMachine): Promise<void> {
+    const isPaused = !isMachinePaused(machine);
+    const label = isPaused ? '一键暂停' : '恢复';
+    if (await performCommand(machine.id, { type: 'settings.update', payload: { isPaused } }, label)) {
+      await load(true);
+    }
+  }
+
   /** 让 Mac 马上把最新状态传上来 */
   async function syncNow(machine: IMachine): Promise<void> {
     if (await performCommand(machine.id, { type: 'sync.now', payload: {} }, '立即同步')) {
@@ -174,10 +188,13 @@
       <p class="empty">还没有 Mac 同步过来。在 Mac 上运行 <span class="mono">agentctl hub setup</span>，按提示配置 hub。</p>
     {/if}
     {#each machines as machine (machine.id)}
-      <div class="machine card">
+      <div class="machine card" class:machine-paused={isMachinePaused(machine)}>
         <span class="dot" class:online={machine.isOnline}></span>
         <div class="machine-text">
-          <span class="machine-name">{machine.id}</span>
+          <span class="inline-row machine-title">
+            <span class="machine-name">{machine.id}</span>
+            {#if isMachinePaused(machine)}<span class="status status-pending">已暂停</span>{/if}
+          </span>
           <span class="muted machine-meta" title={formatFullTime(machine.lastSeenAt)}>{machineText(machine)}</span>
         </div>
         {#if machine.health !== null}
@@ -193,7 +210,24 @@
               : ''}
           </button>
         {/if}
-        <button class="btn sync" type="button" disabled={commandState.isBusy} onclick={() => void syncNow(machine)}>立即同步</button>
+        <span class="machine-actions">
+          {#if machine.settings !== null}
+            <button
+              class="btn"
+              class:btn-primary={isMachinePaused(machine)}
+              class:pause-btn={!isMachinePaused(machine)}
+              type="button"
+              disabled={commandState.isBusy}
+              onclick={() => void togglePaused(machine)}
+            >
+              {isMachinePaused(machine) ? '恢复' : '一键暂停'}
+            </button>
+          {/if}
+          <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void syncNow(machine)}>立即同步</button>
+        </span>
+        {#if isMachinePaused(machine)}
+          <p class="machine-note">已暂停：不开新运行，定时到点跳过；手动发起的会排队，恢复后接着跑</p>
+        {/if}
         {#if machine.health !== null && machine.health.status !== 'ok'}
           <p class="machine-error">{machine.health.detail}</p>
         {/if}
@@ -344,8 +378,36 @@
     text-align: center;
   }
 
-  .machine .sync {
+  .machine-title {
+    gap: 8px;
+  }
+
+  .machine-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-left: auto;
+  }
+
+  /* 一键暂停用醒目的红色描边，误点前看得出这是会停掉所有运行的按钮 */
+  .pause-btn {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .pause-btn:hover:not(:disabled) {
+    border-color: var(--danger);
+    background: var(--danger-bg);
+  }
+
+  .machine-paused {
+    border-color: var(--pending);
+  }
+
+  .machine-note {
+    flex-basis: 100%;
+    color: var(--pending);
+    font-size: 13px;
   }
 
   .machine-error {
