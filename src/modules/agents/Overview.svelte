@@ -156,6 +156,9 @@
   /** 一键暂停或恢复这台机器：暂停时正在跑的放回队列，恢复后接着跑 */
   async function togglePaused(machine: IMachine): Promise<void> {
     const isPaused = !isMachinePaused(machine);
+    if (isPaused && !confirm(`暂停 ${machine.id}？正在跑的运行会被中断、放回队列，恢复后重新跑；定时到点会跳过。`)) {
+      return;
+    }
     const label = isPaused ? '一键暂停' : '恢复';
     if (await performCommand(machine.id, { type: 'settings.update', payload: { isPaused } }, label)) {
       await load(true);
@@ -191,7 +194,7 @@
       <div class="machine card" class:machine-paused={isMachinePaused(machine)}>
         <span class="dot" class:online={machine.isOnline}></span>
         <div class="machine-text">
-          <span class="inline-row machine-title">
+          <span class="inline-row">
             <span class="machine-name">{machine.id}</span>
             {#if isMachinePaused(machine)}<span class="status status-pending">已暂停</span>{/if}
           </span>
@@ -210,11 +213,12 @@
               : ''}
           </button>
         {/if}
-        <span class="machine-actions">
+        <span class="btn-row machine-actions">
           {#if machine.settings !== null}
             <button
               class="btn"
               class:btn-primary={isMachinePaused(machine)}
+              class:danger={!isMachinePaused(machine)}
               class:pause-btn={!isMachinePaused(machine)}
               type="button"
               disabled={commandState.isBusy}
@@ -226,7 +230,7 @@
           <button class="btn" type="button" disabled={commandState.isBusy} onclick={() => void syncNow(machine)}>立即同步</button>
         </span>
         {#if isMachinePaused(machine)}
-          <p class="machine-note">已暂停：不开新运行，定时到点跳过；手动发起的会排队，恢复后接着跑</p>
+          <p class="machine-note">已暂停：正在跑的已放回队列，不开新运行，定时到点跳过；手动发起的会排队，恢复后接着跑</p>
         {/if}
         {#if machine.health !== null && machine.health.status !== 'ok'}
           <p class="machine-error">{machine.health.detail}</p>
@@ -378,25 +382,16 @@
     text-align: center;
   }
 
-  .machine-title {
-    gap: 8px;
-  }
-
   .machine-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
     margin-left: auto;
   }
 
   /* 一键暂停用醒目的红色描边，误点前看得出这是会停掉所有运行的按钮 */
   .pause-btn {
     border-color: var(--danger);
-    color: var(--danger);
   }
 
   .pause-btn:hover:not(:disabled) {
-    border-color: var(--danger);
     background: var(--danger-bg);
   }
 
